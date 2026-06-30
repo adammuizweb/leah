@@ -109,7 +109,7 @@ LEAH mendukung hierarki Holding → Organization:
 - **Holding** — entitas level atas (Universitas, Hospital, Farming)
 - **Organization** — struktur bertingkat dalam holding, dengan parent_id dan materialized path
 
-User bisa memiliki akses ke **banyak organisasi** (via tabel pivot `user_organizations`).
+User bisa memiliki akses ke **banyak organisasi** (via tabel pivot user.organizations).
 Scope filter otomatis membatasi data berdasarkan organisasi yang bisa diakses user,
 termasuk organisasi turunannya (via path matching).
 
