@@ -40,7 +40,7 @@ Akses di http://localhost:8080. Login dengan superuser@leah.lan / leah.`,
   },
   'architecture-overview': {
     title: 'Architecture Overview',
-    date: '2026-06-30',
+    date: '2026-07-01',
     body: `LEAH menggunakan arsitektur 3-tier: frontend React, backend Go API, database PostgreSQL.
 
 ## Layer
@@ -102,15 +102,35 @@ Superuser (is_superuser=true) — bypass ALL
 
 Permission granular per module-action (create, read, update, delete, bulk_delete, assign).
 
-## Scope (Multi-Tenant)
+## Scope & Multi-Tenant
 
 LEAH mendukung hierarki Holding → Organization:
 
 - **Holding** — entitas level atas (Universitas, Hospital, Farming)
 - **Organization** — struktur bertingkat dalam holding, dengan parent_id dan materialized path
 
-User hanya bisa melihat data dalam scope organisasinya sendiri (dan children-nya).
-Superuser dan Superadmin bisa melihat semua.
+User bisa memiliki akses ke **banyak organisasi** (via tabel pivot `user_organizations`).
+Scope filter otomatis membatasi data berdasarkan organisasi yang bisa diakses user,
+termasuk organisasi turunannya (via path matching).
+
+Scope diterapkan di:
+- **ListTickets** — hanya ticket dalam org user + children
+- **ListAssets** — hanya asset dalam org user + children
+- **ListUsers** — hanya user dalam org user
+
+Superuser (is_superuser=true) bypass semua scope filter.
+
+## Permission Access Scope
+
+Permission bersifat **global** — role yang sama berlaku di semua holding/org.
+
+| User | Lihat data | Buat data |
+|------|-----------|-----------|
+| Superuser | Semua holding/org | Semua holding/org |
+| Superadmin | Dalam holding-nya | Dalam holding-nya |
+| Admin | Dalam org + children | Dalam org + children |
+| Agent | Dalam org sendiri | Dalam org sendiri |
+| User | Ticket sendiri | Ticket sendiri |
 
 ## Deployment
 
@@ -138,6 +158,11 @@ Satu binary Go (~20MB) tanpa runtime dependency. Nginx sebagai reverse proxy + s
 | users | ✅ bypass | ✅ all | ✅ bypass | ❌ | ❌ |
 | settings.* | ✅ bypass | ✅ all | ❌ 403 | ❌ | ❌ |
 | Bin | ✅ bypass | ✅ all | ❌ 403 | ❌ | ❌ |
+
+## Multi-Org Access
+
+User bisa di-assign ke banyak organisasi lewat Admin → Users → Edit → Organizations.
+Scope filter otomatis menyesuaikan — user melihat data dari semua org yang di-assign.
 
 ## Permission Management
 
