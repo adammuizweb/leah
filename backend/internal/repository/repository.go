@@ -669,6 +669,34 @@ func (r *Repository) CreateHolding(ctx context.Context, h *models.Holding) error
 	return r.db.QueryRow(ctx, `INSERT INTO holdings (name, slug) VALUES ($1,$2) RETURNING id, created_at`, h.Name, h.Slug).Scan(&h.ID, &h.CreatedAt)
 }
 
+func (r *Repository) GetOrganization(ctx context.Context, id int64) (*models.Organization, error) {
+	o := &models.Organization{}
+	err := r.db.QueryRow(ctx, `SELECT id, name, parent_id, holding_id, path, level, created_at FROM organizations WHERE id=$1`, id,
+	).Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.CreatedAt)
+	if err != nil { return nil, fmt.Errorf("organization not found") }
+	return o, nil
+}
+
+func (r *Repository) CreateOrganization(ctx context.Context, o *models.Organization) error {
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO organizations (name, parent_id, holding_id, path, level) VALUES ($1,$2,$3,'/',0) RETURNING id, created_at`,
+		o.Name, o.ParentID, o.HoldingID,
+	).Scan(&o.ID, &o.CreatedAt)
+
+	// Update path after we know the ID
+	path := "/" + fmt.Sprintf("%d", o.ID) + "/"
+	if o.ParentID != nil && *o.ParentID > 0 {
+		parent, err2 := r.GetOrganization(ctx, *o.ParentID)
+		if err2 == nil {
+			path = parent.Path + fmt.Sprintf("%d", o.ID) + "/"
+			o.Level = parent.Level + 1
+		}
+	}
+	r.db.Exec(ctx, `UPDATE organizations SET path=$1, level=$2 WHERE id=$3`, path, o.Level, o.ID)
+	o.Path = path
+	return err
+}
+
 func (r *Repository) ListOrganizations(ctx context.Context) ([]models.Organization, error) {
 	rows, err := r.db.Query(ctx, `SELECT id, name, parent_id, holding_id, path, level, created_at FROM organizations ORDER BY path`)
 	if err != nil { return nil, err }

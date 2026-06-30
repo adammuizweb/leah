@@ -179,6 +179,13 @@ func (h *Handler) CreateHolding(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, hh)
 }
 
+func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+	var oo models.Organization
+	if err := decodeJSON(r, &oo); err != nil { respond(w, 400, map[string]string{"error": "invalid body"}); return }
+	if err := h.svc.CreateOrganization(r.Context(), &oo); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
+	respond(w, 201, oo)
+}
+
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	oo, err := h.svc.ListOrganizations(r.Context())
 	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }

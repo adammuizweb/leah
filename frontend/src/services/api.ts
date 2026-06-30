@@ -76,6 +76,23 @@ export interface PaginatedResult<T> {
   total_pages: number
 }
 
+export interface Holding {
+  id: number
+  name: string
+  slug: string
+  created_at: string
+}
+
+export interface Organization {
+  id: number
+  name: string
+  parent_id?: number | null
+  holding_id: number
+  path: string
+  level: number
+  created_at: string
+}
+
 export interface AssetType {
   id: number
   name: string
@@ -161,6 +178,17 @@ export const api = {
     create: (name: string) => request<AssetType>('/asset-types', { method: 'POST', body: JSON.stringify({ name }) }),
     update: (id: number, name: string) => request<AssetType>(`/asset-types/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
     delete: (id: number) => request<void>(`/asset-types/${id}`, { method: 'DELETE' }),
+  },
+
+  holdings: {
+    list: () => request<Holding[]>('/holdings'),
+    create: (data: { name: string; slug: string }) => request<Holding>('/holdings', { method: 'POST', body: JSON.stringify(data) }),
+  },
+
+  organizations: {
+    list: () => request<Organization[]>('/organizations'),
+    create: (data: { name: string; holding_id: number; parent_id?: number | null }) =>
+      request<Organization>('/organizations', { method: 'POST', body: JSON.stringify(data) }),
   },
 
   assetCategories: {

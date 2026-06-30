@@ -103,7 +103,10 @@ func main() {
 				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListHoldings)
 				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateHolding)
 			})
-			r.With(leahmw.RequirePermission("settings.read")).Get("/organizations", h.ListOrganizations)
+			r.Route("/organizations", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListOrganizations)
+				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateOrganization)
+			})
 
 			// Asset Types & Categories
 			r.Route("/asset-types", func(r chi.Router) {

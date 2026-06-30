@@ -15,6 +15,8 @@ import AdminUsers from './pages/AdminUsers'
 import AdminPermissions from './pages/AdminPermissions'
 import AdminTypes from './pages/AdminTypes'
 import AdminCategories from './pages/AdminCategories'
+import AdminHoldings from './pages/AdminHoldings'
+import AdminOrganizations from './pages/AdminOrganizations'
 import AdminBin from './pages/AdminBin'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -49,6 +51,8 @@ function App() {
             <Route path="permissions" element={<AdminPermissions />} />
             <Route path="types" element={<AdminTypes />} />
             <Route path="categories" element={<AdminCategories />} />
+            <Route path="holdings" element={<AdminHoldings />} />
+            <Route path="organizations" element={<AdminOrganizations />} />
             <Route path="bin" element={<AdminBin />} />
           </Route>
         </Route>
