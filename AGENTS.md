@@ -26,6 +26,16 @@ Seeder: `backend/migrations/003_seed.sql`
 - Database: PostgreSQL
 - Deployment: Binary langsung (no Docker), Nginx reverse proxy, Cloudflare Tunnel
 
+## Reusable Components
+
+Semua komponen reusable di `frontend/src/components/`:
+
+| Komponen | File | Kegunaan |
+|----------|------|----------|
+| Modal | `Modal.tsx` | Popup untuk form create/edit. Props: open, onClose, title, children |
+| ConfirmDialog | `ConfirmDialog.tsx` | Konfirmasi aksi (delete, dll). Props: open, onClose, onConfirm, title, message, confirmLabel, variant |
+| Toast | `Toast.tsx` | Notifikasi. Wrap `<ToastProvider>` di App, lalu panggil `useToast().toast(msg, type)` |
+
 ## Arsitektur
 
 ```

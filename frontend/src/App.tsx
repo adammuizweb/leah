@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './services/auth'
+import { ToastProvider } from './components/Toast'
 import Landing from './pages/Landing'
 import AppShell from './pages/AppShell'
 import Login from './pages/Login'
@@ -29,6 +30,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -45,6 +47,7 @@ function App() {
           </Route>
         </Route>
       </Routes>
+      </ToastProvider>
     </AuthProvider>
   )
 }
