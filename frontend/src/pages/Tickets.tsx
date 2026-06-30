@@ -10,7 +10,8 @@ const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 export default function Tickets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const { user } = useAuth()
+  const { user, permissions } = useAuth()
+  const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('tickets.bulk_delete')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [title, setTitle] = useState('')
@@ -96,7 +97,7 @@ export default function Tickets() {
       {selected.size > 0 && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2 mb-4 flex items-center gap-3 text-sm">
           <span className="font-medium text-indigo-700">{selected.size} selected</span>
-          <button onClick={bulkDelete} className="text-red-600 hover:text-red-800 font-medium">Delete all</button>
+          {canBulk && <button onClick={bulkDelete} className="text-red-600 hover:text-red-800 font-medium">Delete all</button>}
           <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-700">Clear</button>
         </div>
       )}

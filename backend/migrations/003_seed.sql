@@ -15,12 +15,14 @@ INSERT INTO permissions (name, label, module, action) VALUES
     ('tickets.read.own', 'View own tickets', 'tickets', 'read.own'),
     ('tickets.update',   'Update tickets',   'tickets', 'update'),
     ('tickets.delete',   'Delete tickets',   'tickets', 'delete'),
+    ('tickets.bulk_delete', 'Bulk delete tickets', 'tickets', 'bulk_delete'),
     ('tickets.assign',   'Assign tickets',   'tickets', 'assign'),
     -- Assets
     ('assets.create',   'Create assets',    'assets', 'create'),
     ('assets.read',     'View all assets',  'assets', 'read'),
     ('assets.update',   'Update assets',    'assets', 'update'),
     ('assets.delete',   'Delete assets',    'assets', 'delete'),
+    ('assets.bulk_delete', 'Bulk delete assets', 'assets', 'bulk_delete'),
     ('assets.assign',   'Assign assets',    'assets', 'assign'),
     -- Users
     ('users.create', 'Create users', 'users', 'create'),
