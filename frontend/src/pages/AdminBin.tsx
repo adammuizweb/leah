@@ -29,17 +29,15 @@ export default function AdminBin() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deleted At</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deleted</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {items?.map(item => (
               <tr key={`${item.type}-${item.id}`}>
-                <td className="px-4 py-3 text-sm">{icon[item.type] || '📄'} {item.type}</td>
-                <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.title}</td>
+                <td className="px-4 py-3 text-sm">{icon[item.type] || '📄'} <span className="font-medium text-gray-900">{item.title}</span> <span className="text-gray-400 text-xs">({item.type})</span></td>
                 <td className="px-4 py-3 text-sm text-gray-500">{new Date(item.deleted_at).toLocaleString()}</td>
                 <td className="px-4 py-3 text-sm space-x-2">
                   <button onClick={() => restore.mutate({ type: item.type, id: item.id })} className="text-green-600 hover:text-green-800">Restore</button>

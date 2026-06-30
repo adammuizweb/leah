@@ -10,15 +10,9 @@ export default function Assets() {
   const [typeId, setTypeId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
 
-  const { data: assets, isLoading } = useQuery({
-    queryKey: ['assets'],
-    queryFn: api.assets.list,
-  })
-
-  const { data: assetTypes } = useQuery({
-    queryKey: ['asset-types'],
-    queryFn: api.assetTypes.list,
-  })
+  const { data: assets, isLoading } = useQuery({ queryKey: ['assets'], queryFn: api.assets.list })
+  const { data: assetTypes } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
+  const typeMap = new Map(assetTypes?.map(t => [t.id, t.name]) || [])
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<Asset>) => api.assets.create(data),
@@ -113,7 +107,6 @@ export default function Assets() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial</th>
@@ -124,9 +117,8 @@ export default function Assets() {
           <tbody className="divide-y divide-gray-200">
             {assets?.map(asset => (
               <tr key={asset.id}>
-                <td className="px-6 py-4 text-sm text-gray-900">#{asset.id}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">{asset.name}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{asset.type}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{asset.type_id ? (typeMap.get(asset.type_id) || asset.type) : asset.type}</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{asset.serial}</td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
