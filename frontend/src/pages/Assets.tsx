@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Asset } from '../services/api'
 import { useState } from 'react'
+import Modal from '../components/Modal'
+import { useToast } from '../components/Toast'
 
 export default function Assets() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState<number | ''>('')
@@ -33,14 +36,17 @@ export default function Assets() {
   const createMutation = useMutation({
     mutationFn: (data: Partial<Asset>) => api.assets.create(data),
     onSuccess: () => {
+      toast('Asset created', 'success')
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       setShowForm(false); setName(''); setTypeId(''); setCategoryId(''); setSerial('')
     },
+    onError: (e: Error) => toast(e.message, 'error'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.assets.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['assets'] }),
+    onSuccess: () => { toast('Asset deleted', 'success'); queryClient.invalidateQueries({ queryKey: ['assets'] }) },
+    onError: (e: Error) => toast(e.message, 'error'),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -59,35 +65,24 @@ export default function Assets() {
         <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Asset'}</button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg px-3 py-2" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Serial</label>
-              <input value={serial} onChange={e => setSerial(e.target.value)} className="w-full border rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-              <select value={typeId} onChange={e => { setTypeId(e.target.value ? Number(e.target.value) : ''); setCategoryId('') }} className="w-full border rounded-lg px-3 py-2" required>
-                <option value="">— Select type —</option>
-                {assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select value={categoryId} onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2" disabled={!typeId}>
-                <option value="">— No category —</option>
-                {filteredCats?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="New Asset">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Name" required />
+          <input value={serial} onChange={e => setSerial(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Serial number" />
+          <select value={typeId} onChange={e => { setTypeId(e.target.value ? Number(e.target.value) : ''); setCategoryId('') }} className="w-full border rounded-lg px-3 py-2 text-sm" required>
+            <option value="">— Select type —</option>
+            {assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <select value={categoryId} onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm" disabled={!typeId}>
+            <option value="">— No category —</option>
+            {filteredCats?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Create</button>
           </div>
-          <button type="submit" className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Create</button>
         </form>
-      )}
+      </Modal>
 
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">

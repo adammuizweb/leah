@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Ticket } from '../services/api'
 import { useState } from 'react'
+import Modal from '../components/Modal'
+import { useToast } from '../components/Toast'
 
 export default function Tickets() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -34,14 +37,17 @@ export default function Tickets() {
   const createMutation = useMutation({
     mutationFn: (data: Partial<Ticket>) => api.tickets.create(data),
     onSuccess: () => {
+      toast('Ticket created', 'success')
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
       setShowForm(false); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false)
     },
+    onError: (e: Error) => toast(e.message, 'error'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.tickets.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+    onSuccess: () => { toast('Ticket deleted', 'success'); queryClient.invalidateQueries({ queryKey: ['tickets'] }) },
+    onError: (e: Error) => toast(e.message, 'error'),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -61,29 +67,21 @@ export default function Tickets() {
         <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Ticket'}</button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Related Asset <span className="text-red-500">*</span></label>
-              <select value={assetId} onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }} className={`w-full border rounded-lg px-3 py-2 ${assetError ? 'border-red-400' : ''}`}>
-                <option value="">— Select asset —</option>
-                {assets?.data?.map(a => <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>)}
-              </select>
-              {assetError && <p className="text-xs text-red-500 mt-1">Asset is required</p>}
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2" rows={3} />
-            </div>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="New Ticket">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Title" required />
+          <select value={assetId} onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }} className={`w-full border rounded-lg px-3 py-2 text-sm ${assetError ? 'border-red-400' : ''}`}>
+            <option value="">— Select asset —</option>
+            {assets?.data?.map(a => <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>)}
+          </select>
+          {assetError && <p className="text-xs text-red-500">Asset is required</p>}
+          <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Description" rows={3} />
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Create</button>
           </div>
-          <button type="submit" className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Create</button>
         </form>
-      )}
+      </Modal>
 
       <div className="bg-white rounded-lg shadow mb-4">
         <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
