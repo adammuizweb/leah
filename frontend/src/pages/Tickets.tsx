@@ -10,27 +10,32 @@ export default function Tickets() {
   const [assetId, setAssetId] = useState<number | ''>('')
   const [assetError, setAssetError] = useState(false)
 
-  const { data: tickets, isLoading } = useQuery({
-    queryKey: ['tickets'],
-    queryFn: api.tickets.list,
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [priorityFilter, setPriorityFilter] = useState('')
+  const [page, setPage] = useState(1)
+
+  const params: Record<string, string> = {}
+  if (search) params.search = search
+  if (statusFilter) params.status = statusFilter
+  if (priorityFilter) params.priority = priorityFilter
+  params.per_page = '10'
+  params.page = String(page)
+
+  const { data: result } = useQuery({
+    queryKey: ['tickets', params],
+    queryFn: () => api.tickets.list(params),
   })
 
-  const { data: assets } = useQuery({
-    queryKey: ['assets'],
-    queryFn: api.assets.list,
-  })
+  const { data: assets } = useQuery({ queryKey: ['assets-all'], queryFn: () => api.assets.list({ per_page: '999' }) })
 
-  const assetMap = new Map(assets?.map(a => [a.id, a]) || [])
+  const assetMap = new Map(assets?.data?.map(a => [a.id, a]) || [])
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<Ticket>) => api.tickets.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
-      setShowForm(false)
-      setTitle('')
-      setDescription('')
-      setAssetId('')
-      setAssetError(false)
+      setShowForm(false); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false)
     },
   })
 
@@ -43,63 +48,63 @@ export default function Tickets() {
     e.preventDefault()
     if (!assetId) { setAssetError(true); return }
     setAssetError(false)
-    createMutation.mutate({
-      title,
-      description,
-      asset_id: assetId,
-    } as Partial<Ticket>)
+    createMutation.mutate({ title, description, asset_id: assetId } as Partial<Ticket>)
   }
 
-  if (isLoading) return <div className="text-gray-500">Loading...</div>
+  const tickets = result?.data || []
+  const totalPages = result?.total_pages || 1
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Tickets</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          {showForm ? 'Cancel' : 'New Ticket'}
-        </button>
+        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Ticket'}</button>
       </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Related Asset <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={assetId}
-              onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }}
-              className={`w-full border rounded-lg px-3 py-2 ${assetError ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'}`}
-            >
-              <option value="">— Select asset —</option>
-              {assets?.map(a => (
-                <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>
-              ))}
-            </select>
-            {assetError && <p className="text-xs text-red-500 mt-1">Asset is required</p>}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Related Asset <span className="text-red-500">*</span></label>
+              <select value={assetId} onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }} className={`w-full border rounded-lg px-3 py-2 ${assetError ? 'border-red-400' : ''}`}>
+                <option value="">— Select asset —</option>
+                {assets?.data?.map(a => <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>)}
+              </select>
+              {assetError && <p className="text-xs text-red-500 mt-1">Asset is required</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2" rows={3} />
+            </div>
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2" rows={3} />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Related Asset</label>
-            <select value={assetId} onChange={e => setAssetId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2">
-              <option value="">— No asset —</option>
-              {assets?.map(a => (
-                <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>
-              ))}
-            </select>
-          </div>
-          <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Create</button>
+          <button type="submit" className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Create</button>
         </form>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow mb-4">
+        <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search tickets..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+          <select value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All priorities</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+          <span className="text-xs text-gray-400">{result?.total || 0} tickets</span>
+        </div>
+
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -111,7 +116,7 @@ export default function Tickets() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {tickets?.map(ticket => {
+            {tickets.map(ticket => {
               const asset = ticket.asset_id ? assetMap.get(ticket.asset_id) : null
               return (
                 <tr key={ticket.id}>
@@ -133,6 +138,14 @@ export default function Tickets() {
             })}
           </tbody>
         </table>
+
+        {totalPages > 1 && (
+          <div className="px-6 py-3 border-t border-gray-200 flex justify-between items-center text-sm">
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-30">Previous</button>
+            <span className="text-gray-500">Page {page} of {totalPages}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+          </div>
+        )}
       </div>
     </div>
   )

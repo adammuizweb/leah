@@ -17,12 +17,62 @@ func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, created_at, updated_at`
 
-func (r *Repository) ListTickets(ctx context.Context) ([]models.Ticket, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+ticketCols+` FROM tickets WHERE deleted_at IS NULL ORDER BY created_at DESC`)
+type TicketFilter struct {
+	Search   string
+	Status   string
+	Priority string
+	Page     int
+	PerPage  int
+}
+
+type PaginatedResult[T any] struct {
+	Data       []T   `json:"data"`
+	Total      int   `json:"total"`
+	Page       int   `json:"page"`
+	PerPage    int   `json:"per_page"`
+	TotalPages int   `json:"total_pages"`
+}
+
+func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*PaginatedResult[models.Ticket], error) {
+	if f.Page < 1 { f.Page = 1 }
+	if f.PerPage < 1 { f.PerPage = 20 }
+
+	where := `WHERE t.deleted_at IS NULL`
+	args := []any{}
+	aidx := 1
+
+	if f.Search != "" {
+		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d)`, aidx, aidx)
+		args = append(args, "%"+f.Search+"%")
+		aidx++
+	}
+	if f.Status != "" {
+		where += fmt.Sprintf(` AND t.status = $%d`, aidx)
+		args = append(args, f.Status)
+		aidx++
+	}
+	if f.Priority != "" {
+		where += fmt.Sprintf(` AND t.priority = $%d`, aidx)
+		args = append(args, f.Priority)
+		aidx++
+	}
+
+	var total int
+	countQuery := `SELECT COUNT(*) FROM tickets t ` + where
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	offset := (f.Page - 1) * f.PerPage
+	dataQuery := `SELECT `+ticketCols+` FROM tickets t ` + where + ` ORDER BY t.created_at DESC LIMIT $` + fmt.Sprintf("%d", aidx) + ` OFFSET $` + fmt.Sprintf("%d", aidx+1)
+	args = append(args, f.PerPage, offset)
+
+	rows, err := r.db.Query(ctx, dataQuery, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	tickets := make([]models.Ticket, 0)
 	for rows.Next() {
 		var t models.Ticket
@@ -31,7 +81,9 @@ func (r *Repository) ListTickets(ctx context.Context) ([]models.Ticket, error) {
 		}
 		tickets = append(tickets, t)
 	}
-	return tickets, nil
+
+	totalPages := (total + f.PerPage - 1) / f.PerPage
+	return &PaginatedResult[models.Ticket]{Data: tickets, Total: total, Page: f.Page, PerPage: f.PerPage, TotalPages: totalPages}, nil
 }
 
 func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
@@ -81,12 +133,53 @@ func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
 
 const assetCols = `id, name, type, type_id, category_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, created_at, updated_at`
 
-func (r *Repository) ListAssets(ctx context.Context) ([]models.Asset, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+assetCols+` FROM assets WHERE deleted_at IS NULL ORDER BY name`)
+type AssetFilter struct {
+	Search  string
+	Status  string
+	TypeID  int64
+	Page    int
+	PerPage int
+}
+
+func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedResult[models.Asset], error) {
+	if f.Page < 1 { f.Page = 1 }
+	if f.PerPage < 1 { f.PerPage = 20 }
+
+	where := `WHERE a.deleted_at IS NULL`
+	args := []any{}
+	aidx := 1
+
+	if f.Search != "" {
+		where += fmt.Sprintf(` AND (a.name ILIKE $%d OR a.serial ILIKE $%d)`, aidx, aidx)
+		args = append(args, "%"+f.Search+"%")
+		aidx++
+	}
+	if f.Status != "" {
+		where += fmt.Sprintf(` AND a.status = $%d`, aidx)
+		args = append(args, f.Status)
+		aidx++
+	}
+	if f.TypeID > 0 {
+		where += fmt.Sprintf(` AND a.type_id = $%d`, aidx)
+		args = append(args, f.TypeID)
+		aidx++
+	}
+
+	var total int
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM assets a `+where, args...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	offset := (f.Page - 1) * f.PerPage
+	dataQuery := `SELECT `+assetCols+` FROM assets a ` + where + ` ORDER BY a.name LIMIT $` + fmt.Sprintf("%d", aidx) + ` OFFSET $` + fmt.Sprintf("%d", aidx+1)
+	args = append(args, f.PerPage, offset)
+
+	rows, err := r.db.Query(ctx, dataQuery, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	assets := make([]models.Asset, 0)
 	for rows.Next() {
 		var a models.Asset
@@ -95,7 +188,9 @@ func (r *Repository) ListAssets(ctx context.Context) ([]models.Asset, error) {
 		}
 		assets = append(assets, a)
 	}
-	return assets, nil
+
+	totalPages := (total + f.PerPage - 1) / f.PerPage
+	return &PaginatedResult[models.Asset]{Data: assets, Total: total, Page: f.Page, PerPage: f.PerPage, TotalPages: totalPages}, nil
 }
 
 func (r *Repository) CreateAsset(ctx context.Context, a *models.Asset) error {

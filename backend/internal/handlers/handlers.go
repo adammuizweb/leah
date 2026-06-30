@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/adammuiz/leah/internal/middleware"
 	"github.com/adammuiz/leah/internal/models"
+	"github.com/adammuiz/leah/internal/repository"
 	"github.com/adammuiz/leah/internal/services"
 )
 
@@ -41,13 +42,29 @@ func respond(w http.ResponseWriter, status int, data any) {
 	json.NewEncoder(w).Encode(data)
 }
 
+func parsePagination(r *http.Request) (page, perPage int) {
+	page, _ = strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ = strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 { page = 1 }
+	if perPage < 1 { perPage = 20 }
+	return
+}
+
 func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
-	tickets, err := h.svc.ListTickets(r.Context())
+	page, perPage := parsePagination(r)
+	f := repository.TicketFilter{
+		Search:   r.URL.Query().Get("search"),
+		Status:   r.URL.Query().Get("status"),
+		Priority: r.URL.Query().Get("priority"),
+		Page:     page,
+		PerPage:  perPage,
+	}
+	result, err := h.svc.ListTickets(r.Context(), f)
 	if err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
-	respond(w, 200, tickets)
+	respond(w, 200, result)
 }
 
 func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
@@ -111,12 +128,21 @@ func (h *Handler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListAssets(w http.ResponseWriter, r *http.Request) {
-	assets, err := h.svc.ListAssets(r.Context())
+	page, perPage := parsePagination(r)
+	typeID, _ := strconv.ParseInt(r.URL.Query().Get("type_id"), 10, 64)
+	f := repository.AssetFilter{
+		Search:  r.URL.Query().Get("search"),
+		Status:  r.URL.Query().Get("status"),
+		TypeID:  typeID,
+		Page:    page,
+		PerPage: perPage,
+	}
+	result, err := h.svc.ListAssets(r.Context(), f)
 	if err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
-	respond(w, 200, assets)
+	respond(w, 200, result)
 }
 
 func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {

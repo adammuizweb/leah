@@ -68,6 +68,14 @@ export interface BinItem {
   deleted_at: string
 }
 
+export interface PaginatedResult<T> {
+  data: T[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
+}
+
 export interface AssetType {
   id: number
   name: string
@@ -173,7 +181,10 @@ export const api = {
   },
 
   tickets: {
-    list: () => request<Ticket[]>('/tickets'),
+    list: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : ''
+      return request<PaginatedResult<Ticket>>('/tickets' + q)
+    },
     get: (id: number) => request<Ticket>(`/tickets/${id}`),
     create: (data: Partial<Ticket>) =>
       request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) }),
@@ -184,7 +195,10 @@ export const api = {
   },
 
   assets: {
-    list: () => request<Asset[]>('/assets'),
+    list: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : ''
+      return request<PaginatedResult<Asset>>('/assets' + q)
+    },
     get: (id: number) => request<Asset>(`/assets/${id}`),
     create: (data: Partial<Asset>) =>
       request<Asset>('/assets', { method: 'POST', body: JSON.stringify(data) }),

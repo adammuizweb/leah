@@ -12,8 +12,8 @@ type Service struct{ repo *repository.Repository }
 
 func New(repo *repository.Repository) *Service { return &Service{repo: repo} }
 
-func (s *Service) ListTickets(ctx context.Context) ([]models.Ticket, error) {
-	return s.repo.ListTickets(ctx)
+func (s *Service) ListTickets(ctx context.Context, f repository.TicketFilter) (*repository.PaginatedResult[models.Ticket], error) {
+	return s.repo.ListTickets(ctx, f)
 }
 func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	if t.Status == "" {
@@ -34,8 +34,8 @@ func (s *Service) DeleteTicket(ctx context.Context, id, userID int64) error {
 	return s.repo.DeleteTicket(ctx, id, userID)
 }
 
-func (s *Service) ListAssets(ctx context.Context) ([]models.Asset, error) {
-	return s.repo.ListAssets(ctx)
+func (s *Service) ListAssets(ctx context.Context, f repository.AssetFilter) (*repository.PaginatedResult[models.Asset], error) {
+	return s.repo.ListAssets(ctx, f)
 }
 func (s *Service) CreateAsset(ctx context.Context, a *models.Asset) error {
 	if a.Status == "" {

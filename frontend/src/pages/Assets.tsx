@@ -10,7 +10,19 @@ export default function Assets() {
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
 
-  const { data: assets, isLoading } = useQuery({ queryKey: ['assets'], queryFn: api.assets.list })
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState<number | ''>('')
+  const [page, setPage] = useState(1)
+
+  const params: Record<string, string> = {}
+  if (search) params.search = search
+  if (statusFilter) params.status = statusFilter
+  if (typeFilter) params.type_id = String(typeFilter)
+  params.per_page = '10'
+  params.page = String(page)
+
+  const { data: result } = useQuery({ queryKey: ['assets', params], queryFn: () => api.assets.list(params) })
   const { data: assetTypes } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
   const { data: categories } = useQuery({ queryKey: ['asset-categories'], queryFn: api.assetCategories.list })
 
@@ -34,24 +46,17 @@ export default function Assets() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedType = assetTypes?.find(t => t.id === typeId)
-    createMutation.mutate({
-      name,
-      type: selectedType?.name || '',
-      type_id: typeId || null,
-      category_id: categoryId || null,
-      serial,
-    } as Partial<Asset>)
+    createMutation.mutate({ name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial } as Partial<Asset>)
   }
 
-  if (isLoading) return <div className="text-gray-500">Loading...</div>
+  const assets = result?.data || []
+  const totalPages = result?.total_pages || 1
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assets</h1>
-        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
-          {showForm ? 'Cancel' : 'New Asset'}
-        </button>
+        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Asset'}</button>
       </div>
 
       {showForm && (
@@ -84,7 +89,23 @@ export default function Assets() {
         </form>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow">
+        <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search assets..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="retired">Retired</option>
+          </select>
+          <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All types</option>
+            {assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <span className="text-xs text-gray-400">{result?.total || 0} assets</span>
+        </div>
+
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -97,7 +118,7 @@ export default function Assets() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {assets?.map(asset => (
+            {assets.map(asset => (
               <tr key={asset.id}>
                 <td className="px-6 py-4 text-sm text-gray-900">{asset.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">{asset.type_id ? (typeMap.get(asset.type_id) || asset.type) : asset.type}</td>
@@ -113,6 +134,14 @@ export default function Assets() {
             ))}
           </tbody>
         </table>
+
+        {totalPages > 1 && (
+          <div className="px-6 py-3 border-t border-gray-200 flex justify-between items-center text-sm">
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-30">Previous</button>
+            <span className="text-gray-500">Page {page} of {totalPages}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+          </div>
+        )}
       </div>
     </div>
   )
