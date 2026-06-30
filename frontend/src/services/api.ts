@@ -158,6 +158,8 @@ export const api = {
     list: () => request<AssetCategory[]>('/asset-categories'),
     create: (data: { name: string; type_id: number; parent_id?: number | null }) =>
       request<AssetCategory>('/asset-categories', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { name: string; type_id: number; parent_id?: number | null }) =>
+      request<AssetCategory>(`/asset-categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) => request<void>(`/asset-categories/${id}`, { method: 'DELETE' }),
   },
 

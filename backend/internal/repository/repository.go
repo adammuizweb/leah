@@ -508,6 +508,14 @@ func (r *Repository) CreateAssetCategory(ctx context.Context, c *models.AssetCat
 	).Scan(&c.ID, &c.CreatedAt)
 }
 
+func (r *Repository) UpdateAssetCategory(ctx context.Context, c *models.AssetCategory) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE asset_categories SET name=$1, parent_id=$2, type_id=$3 WHERE id=$4`,
+		c.Name, c.ParentID, c.TypeID, c.ID,
+	)
+	return err
+}
+
 func (r *Repository) DeleteAssetCategory(ctx context.Context, id int64) error {
 	tag, err := r.db.Exec(ctx, `DELETE FROM asset_categories WHERE id=$1`, id)
 	if err != nil {

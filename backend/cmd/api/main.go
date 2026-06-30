@@ -107,6 +107,7 @@ func main() {
 			r.Route("/asset-categories", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListAssetCategories)
 				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateAssetCategory)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}", h.UpdateAssetCategory)
 				r.With(leahmw.RequirePermission("settings.update")).Delete("/{id}", h.DeleteAssetCategory)
 			})
 

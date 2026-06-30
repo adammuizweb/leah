@@ -282,6 +282,21 @@ func (h *Handler) CreateAssetCategory(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, c)
 }
 
+func (h *Handler) UpdateAssetCategory(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var c models.AssetCategory
+	if err := decodeJSON(r, &c); err != nil {
+		respond(w, 400, map[string]string{"error": "invalid request body"})
+		return
+	}
+	c.ID = id
+	if err := h.svc.UpdateAssetCategory(r.Context(), &c); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, c)
+}
+
 func (h *Handler) DeleteAssetCategory(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err := h.svc.DeleteAssetCategory(r.Context(), id); err != nil {

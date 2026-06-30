@@ -104,4 +104,5 @@ func (s *Service) CreateAssetType(ctx context.Context, t *models.AssetType) erro
 func (s *Service) DeleteAssetType(ctx context.Context, id int64) error                { return s.repo.DeleteAssetType(ctx, id) }
 func (s *Service) ListAssetCategories(ctx context.Context) ([]models.AssetCategory, error) { return s.repo.ListAssetCategories(ctx) }
 func (s *Service) CreateAssetCategory(ctx context.Context, c *models.AssetCategory) error   { return s.repo.CreateAssetCategory(ctx, c) }
+func (s *Service) UpdateAssetCategory(ctx context.Context, c *models.AssetCategory) error      { return s.repo.UpdateAssetCategory(ctx, c) }
 func (s *Service) DeleteAssetCategory(ctx context.Context, id int64) error                    { return s.repo.DeleteAssetCategory(ctx, id) }
