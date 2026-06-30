@@ -18,6 +18,8 @@ type Claims struct {
 	IsSuperuser    bool     `json:"is_superuser"`
 	OrganizationID int64    `json:"organization_id"`
 	OrgPath        string   `json:"org_path"`
+	OrgIDs         []int64  `json:"org_ids"`
+	OrgPaths       []string `json:"org_paths"`
 	jwt.RegisteredClaims
 }
 
@@ -66,6 +68,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		orgID = *user.OrganizationID
 	}
 
+	// Get all organizations this user belongs to
+	orgIDs, _ := h.svc.GetUserOrganizationIDs(r.Context(), user.ID)
+	orgIDList := make([]int64, 0)
+	orgPaths := make([]string, 0)
+	for _, oid := range orgIDs {
+		orgIDList = append(orgIDList, oid)
+		orgPaths = append(orgPaths, "") // will be populated by middleware/repo
+	}
+	if orgID > 0 && len(orgIDList) == 0 {
+		orgIDList = append(orgIDList, orgID)
+	}
+
 	claims := Claims{
 		UserID:         user.ID,
 		Email:          user.Email,
@@ -74,6 +88,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		IsSuperuser:    user.IsSuperuser,
 		OrganizationID: orgID,
 		OrgPath:        orgPath,
+		OrgIDs:         orgIDList,
+		OrgPaths:       orgPaths,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

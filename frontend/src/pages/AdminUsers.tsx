@@ -12,10 +12,16 @@ export default function AdminUsers() {
   const [editId, setEditId] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null)
+  const [selectedOrgs, setSelectedOrgs] = useState<Set<number>>(new Set())
 
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: api.users.list })
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
+  const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me })
+
+  const orgMap = new Map(orgs?.map(o => [o.id, o]) || [])
+  const holdingMap = new Map(holdings?.map(h => [h.id, h]) || [])
 
   const isEditing = editId !== null
 
@@ -26,7 +32,10 @@ export default function AdminUsers() {
   })
 
   const update = useMutation({
-    mutationFn: () => api.users.update(editId!, { email: form.email, name: form.name, role_id: form.role_id || null }),
+    mutationFn: () => api.users.update(editId!, {
+      email: form.email, name: form.name, role_id: form.role_id || null,
+      org_ids: [...selectedOrgs],
+    }),
     onSuccess: () => { reset(); toast('User updated', 'success'); queryClient.invalidateQueries({ queryKey: ['users'] }) },
     onError: (e: Error) => toast(e.message, 'error'),
   })
@@ -37,14 +46,24 @@ export default function AdminUsers() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function reset() { setForm({ email: '', name: '', password: '', role_id: '' }); setEditId(null); setShowForm(false) }
-  function openEdit(u: User) { setEditId(u.id); setShowForm(true); setForm({ email: u.email, name: u.name, password: '', role_id: u.role_id || '' }) }
+  function reset() { setForm({ email: '', name: '', password: '', role_id: '' }); setEditId(null); setShowForm(false); setSelectedOrgs(new Set()) }
+  function openEdit(u: User) {
+    setEditId(u.id); setShowForm(true)
+    setForm({ email: u.email, name: u.name, password: '', role_id: u.role_id || '' })
+    setSelectedOrgs(new Set(u.organization_id ? [u.organization_id] : []))
+  }
+
+  function toggleOrg(oid: number) {
+    const next = new Set(selectedOrgs)
+    next.has(oid) ? next.delete(oid) : next.add(oid)
+    setSelectedOrgs(next)
+  }
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-        {!showForm && <button onClick={() => { setEditId(null); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ Add User</button>}
+        {!showForm && <button onClick={() => { reset(); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ Add User</button>}
       </div>
 
       <Modal open={showForm} onClose={reset} title={isEditing ? 'Edit User' : 'New User'}>
@@ -56,6 +75,23 @@ export default function AdminUsers() {
             <option value="">— Role —</option>
             {roles?.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
+          {isEditing && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Organizations</label>
+              <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                {orgs?.map(o => {
+                  const h = holdingMap.get(o.holding_id)
+                  return (
+                    <label key={o.id} className="flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={selectedOrgs.has(o.id)} onChange={() => toggleOrg(o.id)} className="rounded" />
+                      {h?.name} / {'—'.repeat(o.level)} {o.name}
+                    </label>
+                  )
+                })}
+                {(!orgs || orgs.length === 0) && <p className="text-xs text-gray-400 px-2">No organizations defined</p>}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={reset} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{isEditing ? 'Update' : 'Create'}</button>
@@ -67,15 +103,18 @@ export default function AdminUsers() {
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
+          <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organization</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody className="divide-y divide-gray-200">
             {users?.map(u => {
               const isMe = currentUser?.user.id === u.id
+              const org = u.organization_id ? orgMap.get(u.organization_id) : null
+              const holding = org ? holdingMap.get(org.holding_id) : null
               return (
                 <tr key={u.id} className={u.deleted_at ? 'opacity-50' : ''}>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
                   <td className="px-4 py-3 text-sm">{u.role || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{org ? (holding ? `${holding.name} / ` : '') + org.name : '—'}</td>
                   <td className="px-4 py-3 text-sm">{u.deleted_at ? <span className="text-red-500">Deleted</span> : <span className="text-green-500">Active</span>}</td>
                   <td className="px-4 py-3 text-sm space-x-2">
                     <button onClick={() => openEdit(u)} className="text-indigo-600 hover:text-indigo-800" disabled={!!u.deleted_at}>Edit</button>

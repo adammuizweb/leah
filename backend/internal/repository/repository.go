@@ -336,6 +336,30 @@ func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, hash stri
 	return nil
 }
 
+func (r *Repository) GetUserOrganizationIDs(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := r.db.Query(ctx, `SELECT organization_id FROM user_organizations WHERE user_id=$1`, userID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil { return nil, err }
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (r *Repository) SetUserOrganizations(ctx context.Context, userID int64, orgIDs []int64) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil { return err }
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM user_organizations WHERE user_id=$1`, userID); err != nil { return err }
+	for _, oid := range orgIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO user_organizations (user_id, organization_id) VALUES ($1,$2)`, userID, oid); err != nil { return err }
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *Repository) SoftDeleteUser(ctx context.Context, id int64) error {
 	tag, err := r.db.Exec(ctx, `UPDATE users SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {

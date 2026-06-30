@@ -26,6 +26,7 @@ export interface User {
   role: string
   role_id: number | null
   is_superuser?: boolean
+  organization_id?: number | null
   created_at: string
   deleted_at?: string | null
 }
@@ -148,9 +149,9 @@ export const api = {
   users: {
     list: () => request<User[]>('/users'),
     get: (id: number) => request<User>(`/users/${id}`),
-    create: (data: { email: string; name: string; password: string; role_id: number | null }) =>
+    create: (data: { email: string; name: string; password: string; role_id: number | null; organization_id?: number | null }) =>
       request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: number, data: { email: string; name: string; role_id: number | null }) =>
+    update: (id: number, data: { email: string; name: string; role_id: number | null; organization_id?: number | null; org_ids?: number[] }) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     updatePassword: (id: number, password: string) =>
       request<void>(`/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),

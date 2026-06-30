@@ -52,18 +52,23 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var req struct {
-		Email  string `json:"email"`
-		Name   string `json:"name"`
-		RoleID *int64 `json:"role_id"`
+		Email          string  `json:"email"`
+		Name           string  `json:"name"`
+		RoleID         *int64  `json:"role_id"`
+		OrganizationID *int64  `json:"organization_id"`
+		OrgIDs         []int64 `json:"org_ids"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		respond(w, 400, map[string]string{"error": "invalid request body"})
 		return
 	}
-	u := &models.User{ID: id, Email: req.Email, Name: req.Name, RoleID: req.RoleID}
+	u := &models.User{ID: id, Email: req.Email, Name: req.Name, RoleID: req.RoleID, OrganizationID: req.OrganizationID}
 	if err := h.svc.UpdateUser(r.Context(), u); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
+	}
+	if len(req.OrgIDs) > 0 {
+		h.svc.SetUserOrganizations(r.Context(), id, req.OrgIDs)
 	}
 	respond(w, 200, u)
 }
