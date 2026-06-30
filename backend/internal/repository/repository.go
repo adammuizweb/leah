@@ -6,12 +6,42 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/adammuiz/leah/internal/middleware"
 	"github.com/adammuiz/leah/internal/models"
 )
 
 type Repository struct{ db *pgxpool.Pool }
 
 func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
+
+// scopeOrgIDs returns all organization IDs this user can access,
+// including descendants of their orgs. Returns nil for superuser (bypass).
+func (r *Repository) scopeOrgIDs(ctx context.Context) []int64 {
+	if isSuper, _ := ctx.Value(middleware.CtxKeyIsSuperuser).(bool); isSuper {
+		return nil
+	}
+	orgIDs, _ := ctx.Value(middleware.CtxKeyOrgIDs).([]int64)
+	orgPaths, _ := ctx.Value(middleware.CtxKeyOrgPaths).([]string)
+	seen := make(map[int64]bool)
+	var result []int64
+	for _, id := range orgIDs {
+		if !seen[id] { seen[id] = true; result = append(result, id) }
+	}
+	if len(orgPaths) > 0 {
+		for _, path := range orgPaths {
+			if path == "" { continue }
+			rows, err := r.db.Query(ctx, `SELECT id FROM organizations WHERE path LIKE $1 || '%' AND id != ALL($2)`, path, orgIDs)
+			if err != nil { continue }
+			for rows.Next() {
+				var id int64
+				rows.Scan(&id)
+				if !seen[id] { seen[id] = true; result = append(result, id) }
+			}
+			rows.Close()
+		}
+	}
+	return result
+}
 
 // ─── Tickets ────────────────────────────────────────────────────
 
@@ -40,6 +70,13 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	where := `WHERE t.deleted_at IS NULL`
 	args := []any{}
 	aidx := 1
+
+	// Scope filter
+	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
+		where += fmt.Sprintf(` AND t.organization_id = ANY($%d)`, aidx)
+		args = append(args, orgIDs)
+		aidx++
+	}
 
 	if f.Search != "" {
 		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d)`, aidx, aidx)
@@ -148,6 +185,12 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 	where := `WHERE a.deleted_at IS NULL`
 	args := []any{}
 	aidx := 1
+
+	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
+		where += fmt.Sprintf(` AND a.organization_id = ANY($%d)`, aidx)
+		args = append(args, orgIDs)
+		aidx++
+	}
 
 	if f.Search != "" {
 		where += fmt.Sprintf(` AND (a.name ILIKE $%d OR a.serial ILIKE $%d)`, aidx, aidx)
@@ -285,10 +328,19 @@ func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]mo
 // ─── User Management ────────────────────────────────────────────
 
 func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
-		 FROM users u LEFT JOIN roles ro ON ro.id=u.role_id ORDER BY u.created_at DESC`,
-	)
+	query := `SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
+		FROM users u LEFT JOIN roles ro ON ro.id=u.role_id`
+	args := []any{}
+	aidx := 1
+
+	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
+		query += fmt.Sprintf(` WHERE u.organization_id = ANY($%d)`, aidx)
+		args = append(args, orgIDs)
+		aidx++
+	}
+	query += ` ORDER BY u.created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

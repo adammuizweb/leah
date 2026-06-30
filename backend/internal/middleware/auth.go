@@ -18,6 +18,8 @@ const (
 	CtxKeyIsSuperuser    ctxKey = "is_superuser"
 	CtxKeyOrgID          ctxKey = "organization_id"
 	CtxKeyOrgPath        ctxKey = "org_path"
+	CtxKeyOrgIDs         ctxKey = "org_ids"     // all accessible org IDs from JWT
+	CtxKeyOrgPaths       ctxKey = "org_paths"   // paths of those orgs
 )
 
 func Auth(secret string) func(http.Handler) http.Handler {
@@ -59,6 +61,26 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			orgID, _ := claims["organization_id"].(float64)
 			orgPath, _ := claims["org_path"].(string)
 
+			// Extract org IDs array
+			var orgIDs []int64
+			if rawIDs, ok := claims["org_ids"].([]any); ok {
+				for _, v := range rawIDs {
+					if f, ok := v.(float64); ok {
+						orgIDs = append(orgIDs, int64(f))
+					}
+				}
+			}
+
+			// Extract org paths array
+			var orgPaths []string
+			if rawPaths, ok := claims["org_paths"].([]any); ok {
+				for _, v := range rawPaths {
+					if s, ok := v.(string); ok {
+						orgPaths = append(orgPaths, s)
+					}
+				}
+			}
+
 			var perms []string
 			if rawPerms, ok := claims["perms"].([]any); ok {
 				for _, p := range rawPerms {
@@ -75,6 +97,8 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, CtxKeyIsSuperuser, isSuper)
 			ctx = context.WithValue(ctx, CtxKeyOrgID, int64(orgID))
 			ctx = context.WithValue(ctx, CtxKeyOrgPath, orgPath)
+			ctx = context.WithValue(ctx, CtxKeyOrgIDs, orgIDs)
+			ctx = context.WithValue(ctx, CtxKeyOrgPaths, orgPaths)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

@@ -74,10 +74,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	orgPaths := make([]string, 0)
 	for _, oid := range orgIDs {
 		orgIDList = append(orgIDList, oid)
-		orgPaths = append(orgPaths, "") // will be populated by middleware/repo
+		if org, err := h.svc.GetOrganization(r.Context(), oid); err == nil {
+			orgPaths = append(orgPaths, org.Path)
+		} else {
+			orgPaths = append(orgPaths, "/")
+		}
 	}
-	if orgID > 0 && len(orgIDList) == 0 {
-		orgIDList = append(orgIDList, orgID)
+	if user.OrganizationID != nil && *user.OrganizationID > 0 && len(orgIDList) == 0 {
+		orgIDList = append(orgIDList, *user.OrganizationID)
 	}
 
 	claims := Claims{
