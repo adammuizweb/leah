@@ -3,7 +3,9 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 const cards = [
   { to: '/admin/users', icon: '👥', title: 'Users', desc: 'Manage users, roles, and passwords' },
   { to: '/admin/permissions', icon: '🔐', title: 'Permissions', desc: 'Create roles & assign permissions' },
-  { to: '/admin/bin', icon: '🗑️', title: 'Bin', desc: 'View and restore deleted items' },
+  { to: '/admin/types', icon: '📋', title: 'Asset Types', desc: 'Manage asset type categories (Laptop, Monitor, etc.)' },
+  { to: '/admin/categories', icon: '📂', title: 'Categories', desc: 'Manage asset sub-categories with hierarchy' },
+  { to: '/admin/bin', icon: '🗑️', title: 'Bin', desc: 'View, restore, or permanently delete items' },
 ]
 
 export default function Admin() {
