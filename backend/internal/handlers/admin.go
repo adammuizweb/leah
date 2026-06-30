@@ -224,3 +224,69 @@ func (h *Handler) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, 200, map[string]string{"status": "ok"})
 }
+
+// ─── Asset Types ────────────────────────────────────────────────
+
+func (h *Handler) ListAssetTypes(w http.ResponseWriter, r *http.Request) {
+	types, err := h.svc.ListAssetTypes(r.Context())
+	if err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, types)
+}
+
+func (h *Handler) CreateAssetType(w http.ResponseWriter, r *http.Request) {
+	var t models.AssetType
+	if err := decodeJSON(r, &t); err != nil {
+		respond(w, 400, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.svc.CreateAssetType(r.Context(), &t); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 201, t)
+}
+
+func (h *Handler) DeleteAssetType(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err := h.svc.DeleteAssetType(r.Context(), id); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 204, nil)
+}
+
+// ─── Asset Categories ──────────────────────────────────────────
+
+func (h *Handler) ListAssetCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := h.svc.ListAssetCategories(r.Context())
+	if err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, cats)
+}
+
+func (h *Handler) CreateAssetCategory(w http.ResponseWriter, r *http.Request) {
+	var c models.AssetCategory
+	if err := decodeJSON(r, &c); err != nil {
+		respond(w, 400, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.svc.CreateAssetCategory(r.Context(), &c); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 201, c)
+}
+
+func (h *Handler) DeleteAssetCategory(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err := h.svc.DeleteAssetCategory(r.Context(), id); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 204, nil)
+}

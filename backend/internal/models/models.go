@@ -18,10 +18,26 @@ type Ticket struct {
 	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
 }
 
+type AssetType struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type AssetCategory struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	ParentID  *int64    `json:"parent_id,omitempty"`
+	TypeID    int64     `json:"type_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Asset struct {
 	ID          int64      `json:"id"`
 	Name        string     `json:"name"`
 	Type        string     `json:"type"`
+	TypeID      *int64     `json:"type_id,omitempty"`
+	CategoryID  *int64     `json:"category_id,omitempty"`
 	Serial      string     `json:"serial"`
 	Status      string     `json:"status"`
 	Location    string     `json:"location"`

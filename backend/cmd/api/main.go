@@ -98,6 +98,18 @@ func main() {
 
 			r.With(leahmw.RequirePermission("settings.read")).Get("/permissions", h.ListAllPermissions)
 
+			// Asset Types & Categories
+			r.Route("/asset-types", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListAssetTypes)
+				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateAssetType)
+				r.With(leahmw.RequirePermission("settings.update")).Delete("/{id}", h.DeleteAssetType)
+			})
+			r.Route("/asset-categories", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListAssetCategories)
+				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateAssetCategory)
+				r.With(leahmw.RequirePermission("settings.update")).Delete("/{id}", h.DeleteAssetCategory)
+			})
+
 			// Admin: Bin
 			r.Route("/bin", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListBin)

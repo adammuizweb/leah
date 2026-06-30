@@ -67,10 +67,26 @@ export interface BinItem {
   deleted_at: string
 }
 
+export interface AssetType {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface AssetCategory {
+  id: number
+  name: string
+  parent_id?: number | null
+  type_id: number
+  created_at: string
+}
+
 export interface Asset {
   id: number
   name: string
   type: string
+  type_id?: number | null
+  category_id?: number | null
   serial: string
   status: string
   location: string
@@ -129,6 +145,19 @@ export const api = {
 
   permissions: {
     list: () => request<Permission[]>('/permissions'),
+  },
+
+  assetTypes: {
+    list: () => request<AssetType[]>('/asset-types'),
+    create: (name: string) => request<AssetType>('/asset-types', { method: 'POST', body: JSON.stringify({ name }) }),
+    delete: (id: number) => request<void>(`/asset-types/${id}`, { method: 'DELETE' }),
+  },
+
+  assetCategories: {
+    list: () => request<AssetCategory[]>('/asset-categories'),
+    create: (data: { name: string; type_id: number; parent_id?: number | null }) =>
+      request<AssetCategory>('/asset-categories', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) => request<void>(`/asset-categories/${id}`, { method: 'DELETE' }),
   },
 
   bin: {

@@ -7,11 +7,17 @@ export default function Assets() {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [type, setType] = useState('')
+  const [typeId, setTypeId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
 
   const { data: assets, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: api.assets.list,
+  })
+
+  const { data: assetTypes } = useQuery({
+    queryKey: ['asset-types'],
+    queryFn: api.assetTypes.list,
   })
 
   const createMutation = useMutation({
@@ -21,6 +27,7 @@ export default function Assets() {
       setShowForm(false)
       setName('')
       setType('')
+      setTypeId('')
       setSerial('')
     },
   })
@@ -32,7 +39,13 @@ export default function Assets() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    createMutation.mutate({ name, type, serial })
+    const selectedType = assetTypes?.find(t => t.id === typeId)
+    createMutation.mutate({
+      name,
+      type: selectedType?.name || type,
+      type_id: typeId || null,
+      serial,
+    } as Partial<Asset>)
   }
 
   if (isLoading) return <div className="text-gray-500">Loading...</div>
@@ -62,12 +75,22 @@ export default function Assets() {
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-            <input
-              value={type}
-              onChange={e => setType(e.target.value)}
+            <select
+              value={typeId}
+              onChange={e => {
+                const id = e.target.value ? Number(e.target.value) : ''
+                setTypeId(id)
+                const t = assetTypes?.find(a => a.id === id)
+                setType(t?.name || '')
+              }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
               required
-            />
+            >
+              <option value="">— Select type —</option>
+              {assetTypes?.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Serial</label>
