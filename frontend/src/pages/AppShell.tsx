@@ -17,6 +17,7 @@ export default function AppShell() {
                 <Link to="/dashboard" className="text-gray-600 hover:text-gray-900">Dashboard</Link>
                 <Link to="/tickets" className="text-gray-600 hover:text-gray-900">Tickets</Link>
                 <Link to="/assets" className="text-gray-600 hover:text-gray-900">Assets</Link>
+                {user?.role === 'admin' && <Link to="/admin" className="text-gray-600 hover:text-indigo-600 font-medium">Admin</Link>}
               </div>
             </div>
             {user && (

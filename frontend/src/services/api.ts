@@ -26,6 +26,7 @@ export interface User {
   role: string
   role_id: number | null
   created_at: string
+  deleted_at?: string | null
 }
 
 export interface Ticket {
@@ -38,6 +39,28 @@ export interface Ticket {
   created_by: number
   created_at: string
   updated_at: string
+}
+
+export interface Role {
+  id: number
+  name: string
+  label: string
+  is_admin: boolean
+  created_at: string
+}
+
+export interface Permission {
+  id: number
+  name: string
+  module: string
+  action: string
+}
+
+export interface BinItem {
+  type: string
+  id: number
+  title: string
+  deleted_at: string
 }
 
 export interface Asset {
@@ -68,6 +91,45 @@ export const api = {
     }),
 
   me: () => request<{ user: User; permissions: string[] }>('/auth/me'),
+
+  changePassword: (password: string) =>
+    request<void>('/auth/password', { method: 'PUT', body: JSON.stringify({ password }) }),
+
+  users: {
+    list: () => request<User[]>('/users'),
+    get: (id: number) => request<User>(`/users/${id}`),
+    create: (data: { email: string; name: string; password: string; role_id: number | null }) =>
+      request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { email: string; name: string; role_id: number | null }) =>
+      request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    updatePassword: (id: number, password: string) =>
+      request<void>(`/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
+    delete: (id: number) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+  },
+
+  roles: {
+    list: () => request<Role[]>('/roles'),
+    create: (data: { name: string; label: string; is_admin: boolean }) =>
+      request<Role>('/roles', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { name: string; label: string; is_admin: boolean }) =>
+      request<Role>(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: number) => request<void>(`/roles/${id}`, { method: 'DELETE' }),
+    getPermissions: (id: number) => request<Permission[]>(`/roles/${id}/permissions`),
+    setPermissions: (id: number, permission_ids: number[]) =>
+      request<void>(`/roles/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permission_ids }) }),
+  },
+
+  permissions: {
+    list: () => request<Permission[]>('/permissions'),
+  },
+
+  bin: {
+    list: () => request<BinItem[]>('/bin'),
+    restore: (type_: string, id: number) =>
+      request<void>(`/bin/${type_}/${id}/restore`, { method: 'POST' }),
+    delete: (type_: string, id: number) =>
+      request<void>(`/bin/${type_}/${id}`, { method: 'DELETE' }),
+  },
 
   tickets: {
     list: () => request<Ticket[]>('/tickets'),

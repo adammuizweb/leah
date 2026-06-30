@@ -45,17 +45,20 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	auth := leahmw.Auth(cfg.JWTSecret)
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.Health)
 
-		// Auth — public
+		// Public
 		r.Post("/auth/login", h.Login)
 
-		// Auth — protected
+		// Protected
 		r.Group(func(r chi.Router) {
-			r.Use(leahmw.Auth(cfg.JWTSecret))
+			r.Use(auth)
 
 			r.Get("/auth/me", h.Me)
+			r.Put("/auth/password", h.ChangeMyPassword)
 
 			r.Route("/tickets", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("tickets.read")).Get("/", h.ListTickets)
@@ -71,6 +74,35 @@ func main() {
 				r.With(leahmw.RequirePermission("assets.read")).Get("/{id}", h.GetAsset)
 				r.With(leahmw.RequirePermission("assets.update")).Put("/{id}", h.UpdateAsset)
 				r.With(leahmw.RequirePermission("assets.delete")).Delete("/{id}", h.DeleteAsset)
+			})
+
+			// Admin: Users
+			r.Route("/users", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("users.read")).Get("/", h.ListUsers)
+				r.With(leahmw.RequirePermission("users.create")).Post("/", h.CreateUser)
+				r.With(leahmw.RequirePermission("users.read")).Get("/{id}", h.GetUser)
+				r.With(leahmw.RequirePermission("users.update")).Put("/{id}", h.UpdateUser)
+				r.With(leahmw.RequirePermission("users.update")).Put("/{id}/password", h.UpdateUserPassword)
+				r.With(leahmw.RequirePermission("users.delete")).Delete("/{id}", h.SoftDeleteUser)
+			})
+
+			// Admin: Roles & Permissions
+			r.Route("/roles", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListRoles)
+				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateRole)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}", h.UpdateRole)
+				r.With(leahmw.RequirePermission("settings.update")).Delete("/{id}", h.DeleteRole)
+				r.With(leahmw.RequirePermission("settings.read")).Get("/{id}/permissions", h.GetRolePermissions)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}/permissions", h.SetRolePermissions)
+			})
+
+			r.With(leahmw.RequirePermission("settings.read")).Get("/permissions", h.ListAllPermissions)
+
+			// Admin: Bin
+			r.Route("/bin", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("settings.read")).Get("/", h.ListBin)
+				r.With(leahmw.RequirePermission("settings.update")).Post("/{type}/{id}/restore", h.RestoreItem)
+				r.With(leahmw.RequirePermission("settings.update")).Delete("/{type}/{id}", h.PermanentlyDelete)
 			})
 		})
 	})
