@@ -4,8 +4,8 @@ import { useState } from 'react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 
-const icons: Record<string, string> = { ticket: '🎫', asset: '📦', user: '👤' }
-const labels: Record<string, string> = { ticket: 'Tickets', asset: 'Assets', user: 'Users' }
+const icons: Record<string, string> = { ticket: '🎫', asset: '📦', user: '👤', type: '📋', category: '📂' }
+const labels: Record<string, string> = { ticket: 'Tickets', asset: 'Assets', user: 'Users', type: 'Asset Types', category: 'Categories' }
 
 export default function AdminBin() {
   const queryClient = useQueryClient()
@@ -51,7 +51,7 @@ export default function AdminBin() {
       />
 
       <div className="space-y-6">
-        {['ticket', 'asset', 'user'].map(type => {
+        {['ticket', 'asset', 'user', 'type', 'category'].map(type => {
           const typeItems = grouped.get(type) || []
           return (
             <div key={type} className="bg-white rounded-lg shadow overflow-hidden">

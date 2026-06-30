@@ -498,6 +498,32 @@ func (r *Repository) ListBin(ctx context.Context) ([]BinItem, error) {
 		items = append(items, b)
 	}
 
+	rows4, err := r.db.Query(ctx, `SELECT 'type' as type, id, name, deleted_at FROM asset_types WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows4.Close()
+	for rows4.Next() {
+		var b BinItem
+		if err := rows4.Scan(&b.Type, &b.ID, &b.Title, &b.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, b)
+	}
+
+	rows5, err := r.db.Query(ctx, `SELECT 'category' as type, id, name, deleted_at FROM asset_categories WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows5.Close()
+	for rows5.Next() {
+		var b BinItem
+		if err := rows5.Scan(&b.Type, &b.ID, &b.Title, &b.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, b)
+	}
+
 	return items, nil
 }
 
@@ -510,6 +536,10 @@ func (r *Repository) RestoreItem(ctx context.Context, itemType string, id int64)
 		table = "assets"
 	case "user":
 		table = "users"
+	case "type":
+		table = "asset_types"
+	case "category":
+		table = "asset_categories"
 	default:
 		return fmt.Errorf("unknown type: %s", itemType)
 	}
@@ -532,6 +562,10 @@ func (r *Repository) PermanentlyDelete(ctx context.Context, itemType string, id 
 		table = "assets"
 	case "user":
 		table = "users"
+	case "type":
+		table = "asset_types"
+	case "category":
+		table = "asset_categories"
 	default:
 		return fmt.Errorf("unknown type: %s", itemType)
 	}
@@ -548,7 +582,7 @@ func (r *Repository) PermanentlyDelete(ctx context.Context, itemType string, id 
 // ─── Asset Types & Categories ──────────────────────────────────
 
 func (r *Repository) ListAssetTypes(ctx context.Context) ([]models.AssetType, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, name, created_at FROM asset_types ORDER BY name`)
+	rows, err := r.db.Query(ctx, `SELECT id, name, created_at FROM asset_types WHERE deleted_at IS NULL ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -569,15 +603,17 @@ func (r *Repository) CreateAssetType(ctx context.Context, t *models.AssetType) e
 }
 
 func (r *Repository) UpdateAssetType(ctx context.Context, t *models.AssetType) error {
-	_, err := r.db.Exec(ctx, `UPDATE asset_types SET name=$1 WHERE id=$2`, t.Name, t.ID)
+	_, err := r.db.Exec(ctx, `UPDATE asset_types SET name=$1 WHERE id=$2 AND deleted_at IS NULL`, t.Name, t.ID)
 	return err
 }
 
 func (r *Repository) DeleteAssetType(ctx context.Context, id int64) error {
-	tag, err := r.db.Exec(ctx, `DELETE FROM asset_types WHERE id=$1`, id)
+	tag, err := r.db.Exec(ctx, `UPDATE asset_types SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return err
 	}
+	// Also soft-delete categories under this type
+	r.db.Exec(ctx, `UPDATE asset_categories SET deleted_at=NOW() WHERE type_id=$1 AND deleted_at IS NULL`, id)
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("type not found")
 	}
@@ -585,7 +621,7 @@ func (r *Repository) DeleteAssetType(ctx context.Context, id int64) error {
 }
 
 func (r *Repository) ListAssetCategories(ctx context.Context) ([]models.AssetCategory, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, name, parent_id, type_id, created_at FROM asset_categories ORDER BY type_id, name`)
+	rows, err := r.db.Query(ctx, `SELECT id, name, parent_id, type_id, created_at FROM asset_categories WHERE deleted_at IS NULL ORDER BY type_id, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +653,7 @@ func (r *Repository) UpdateAssetCategory(ctx context.Context, c *models.AssetCat
 }
 
 func (r *Repository) DeleteAssetCategory(ctx context.Context, id int64) error {
-	tag, err := r.db.Exec(ctx, `DELETE FROM asset_categories WHERE id=$1`, id)
+	tag, err := r.db.Exec(ctx, `UPDATE asset_categories SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return err
 	}
