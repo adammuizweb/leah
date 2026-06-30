@@ -22,3 +22,5 @@ Thumbs.db
 # Build artifacts
 *.tsbuildinfo
 journals/
+test-results/
+playwright-report/
