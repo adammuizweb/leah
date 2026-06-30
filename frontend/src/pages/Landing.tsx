@@ -53,6 +53,7 @@ export default function Landing() {
             <div className="flex items-center gap-4 sm:gap-6">
               <Link to="/about" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">About</Link>
               <Link to="/blog" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Blog</Link>
+              <a href="/docs.html" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Docs</a>
               <a href="https://github.com/adammuizweb/leah" target="_blank" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">GitHub</a>
               <Link to="/dashboard" className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium">
                 Get Started

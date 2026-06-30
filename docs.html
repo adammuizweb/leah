@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEAH — Architecture & Database Documentation</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,'Segoe UI',sans-serif; line-height:1.7; color:#1f2937; background:#f8fafc; padding:2rem; }
+  .container { max-width:1000px; margin:0 auto; }
+  h1 { font-size:2.4rem; font-weight:800; color:#4f46e5; margin-bottom:0.3rem; }
+  .subtitle { color:#64748b; font-size:1.1rem; margin-bottom:2.5rem; }
+  h2 { font-size:1.5rem; font-weight:700; color:#1e293b; margin-top:2.5rem; margin-bottom:1rem; padding-bottom:0.4rem; border-bottom:3px solid #e2e8f0; }
+  h3 { font-size:1.15rem; font-weight:600; color:#334155; margin-top:1.5rem; margin-bottom:0.6rem; }
+  h4 { font-size:1rem; font-weight:600; color:#475569; margin-top:1rem; margin-bottom:0.4rem; }
+  p { margin-bottom:1rem; color:#475569; }
+  ul,ol { margin-bottom:1rem; padding-left:1.5rem; color:#475569; }
+  li { margin-bottom:0.3rem; }
+  pre { background:#1e293b; color:#e2e8f0; padding:1rem 1.2rem; border-radius:8px; overflow-x:auto; font-size:0.82rem; line-height:1.5; margin-bottom:1rem; }
+  code { font-family:'JetBrains Mono','Fira Code',monospace; font-size:0.9em; }
+  p code, li code { background:#e2e8f0; padding:0.15rem 0.4rem; border-radius:4px; color:#1e293b; }
+  .box { background:white; border:1px solid #e2e8f0; border-radius:12px; padding:1.5rem; margin-bottom:1.5rem; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+  .box h3 { margin-top:0; }
+  .tag { display:inline-block; background:#eef2ff; color:#4f46e5; font-size:0.75rem; font-weight:600; padding:0.2rem 0.6rem; border-radius:4px; margin-right:0.3rem; }
+  table.schema { width:100%; border-collapse:collapse; margin-bottom:1rem; font-size:0.85rem; }
+  table.schema th { background:#f1f5f9; text-align:left; padding:0.5rem 0.6rem; border-bottom:2px solid #e2e8f0; font-weight:600; color:#475569; }
+  table.schema td { padding:0.4rem 0.6rem; border-bottom:1px solid #e2e8f0; }
+  table.schema tr:hover td { background:#f8fafc; }
+  .rel { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+  .rel span { background:white; border:1px solid #e2e8f0; border-radius:6px; padding:0.25rem 0.6rem; font-size:0.8rem; }
+  .fk { color:#6366f1; font-weight:500; }
+  .graph { background:white; border:1px solid #e2e8f0; border-radius:12px; padding:1.5rem; margin-bottom:1.5rem; text-align:center; font-family:monospace; font-size:0.85rem; line-height:1.8; }
+  .graph .box-table { display:inline-block; background:#eef2ff; border:1px solid #c7d2fe; border-radius:6px; padding:0.3rem 0.8rem; margin:0.2rem; font-weight:600; color:#4f46e5; }
+  .graph .arrow { color:#94a3b8; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🐱 LEAH</h1>
+<p class="subtitle"><strong>L</strong>ist <strong>E</strong>verything <strong>A</strong>ssets &amp; <strong>H</strong>elpdesk — Architecture &amp; Database Documentation</p>
+
+<!-- ===== OVERVIEW ===== -->
+<h2>1. Project Overview</h2>
+<div class="box">
+  <p>LEAH is an open-source IT Asset Management &amp; Helpdesk Ticketing system inspired by GLPI. Built with modern stack: Go backend, React frontend, PostgreSQL database. Single binary deployment, no runtime dependencies.</p>
+  <table style="width:100%; font-size:0.9rem;">
+    <tr><td style="padding:0.3rem 0;font-weight:600;width:140px;">Language</td><td>Go 1.24 (backend), TypeScript/React (frontend)</td></tr>
+    <tr><td style="padding:0.3rem 0;font-weight:600;">Database</td><td>PostgreSQL 16+</td></tr>
+    <tr><td style="padding:0.3rem 0;font-weight:600;">Auth</td><td>JWT (HS256), bcrypt password hashing</td></tr>
+    <tr><td style="padding:0.3rem 0;font-weight:600;">Deployment</td><td>Single binary (~20MB), Nginx reverse proxy, Cloudflare Tunnel</td></tr>
+    <tr><td style="padding:0.3rem 0;font-weight:600;">License</td><td>Open Source</td></tr>
+  </table>
+</div>
+
+<!-- ===== TECH STACK ===== -->
+<h2>2. Technology Stack</h2>
+<div class="rel">
+  <span><strong>Backend:</strong> Go 1.24, Chi Router, pgx (PostgreSQL driver), golang-jwt</span>
+  <span><strong>Frontend:</strong> React 18, TypeScript, Vite, Tailwind CSS</span>
+  <span><strong>Database:</strong> PostgreSQL 16, pgxpool connections</span>
+  <span><strong>Data Fetching:</strong> TanStack Query (React Query)</span>
+  <span><strong>Routing:</strong> React Router v6, Chi Router (Go)</span>
+  <span><strong>Auth:</strong> JWT (HS256), bcrypt, Role &amp; Permission middleware</span>
+  <span><strong>UI Components:</strong> Custom Modal, ConfirmDialog, Toast notification</span>
+</div>
+
+<!-- ===== ARCHITECTURE ===== -->
+<h2>3. Architecture</h2>
+<div class="box">
+  <p><strong>3-Tier Architecture:</strong></p>
+  <pre>
+  Browser ──→ Nginx ──→ /api/* ──→ Go API (Chi Router) ──→ PostgreSQL
+                         ──→ /* ──→ index.html (React SPA)
+  </pre>
+  <p><strong>Backend Layer Pattern:</strong></p>
+  <pre>
+  Handler (HTTP request/response)
+     ↓
+  Service (business logic, validation)
+     ↓
+  Repository (SQL queries — pgx)
+     ↓
+  PostgreSQL
+  </pre>
+  <p>Every endpoint is protected by two middleware layers:</p>
+  <ul>
+    <li><strong>Auth middleware</strong> — validates JWT token, extracts user + permissions + org scope</li>
+    <li><strong>RequirePermission middleware</strong> — checks specific permission (e.g. <code>tickets.create</code>)</li>
+  </ul>
+</div>
+
+<!-- ===== DATABASE SCHEMA ===== -->
+<h2>4. Database Schema — Entity Relationship</h2>
+
+<div class="graph">
+<span class="box-table">holdings</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">organizations</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">assets</span><br>
+<span class="arrow">                 </span>
+<span class="box-table">organizations</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">tickets</span><br>
+<span class="arrow">                 </span>
+<span class="box-table">organizations</span>
+<span class="arrow">M ──→ M</span>
+<span class="box-table">user_organizations</span>
+<span class="arrow">M ──→ 1</span>
+<span class="box-table">users</span><br><br>
+<span class="box-table">asset_types</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">asset_categories</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">assets</span><br>
+<span class="arrow">                 </span>
+<span class="box-table">assets</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">tickets</span><br>
+<span class="arrow">                 </span>
+<span class="box-table">roles</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">role_permissions</span>
+<span class="arrow">M ──→ 1</span>
+<span class="box-table">permissions</span><br>
+<span class="arrow">                 </span>
+<span class="box-table">roles</span>
+<span class="arrow">1 ──→ M</span>
+<span class="box-table">users</span>
+</div>
+
+<p><strong>Total: 11 tables, 23 foreign key constraints</strong></p>
+
+<!-- === EACH TABLE === -->
+<h3>4.1 holdings</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>slug</td><td>VARCHAR(100)</td><td>UNIQUE, NOT NULL</td></tr>
+  <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+<p><em>Top-level entities. E.g. "Universitas", "Hospital", "Farming".</em></p>
+
+<h3>4.2 organizations</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>parent_id</td><td>BIGINT</td><td>FK → organizations(id) ON DELETE SET NULL</td></tr>
+  <tr><td>holding_id</td><td>BIGINT</td><td>FK → holdings(id) ON DELETE CASCADE, NOT NULL</td></tr>
+  <tr><td>path</td><td>TEXT</td><td>Materialized path: /1/3/7</td></tr>
+  <tr><td>level</td><td>INT</td><td>Depth level (0 = root)</td></tr>
+  <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+<p><em>Hierarchical organizations within holdings. Self-referential parent_id for tree structure. Path enables efficient subtree queries via <code>WHERE path LIKE '/1/3/%'</code>.</em></p>
+
+<h3>4.3 users</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>email</td><td>VARCHAR(255)</td><td>UNIQUE, NOT NULL</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>password_hash</td><td>VARCHAR(255)</td><td>NOT NULL (bcrypt)</td></tr>
+  <tr><td>role_id</td><td>BIGINT</td><td>FK → roles(id) ON DELETE SET NULL</td></tr>
+  <tr><td>is_superuser</td><td>BOOLEAN</td><td>DEFAULT FALSE, bypasses ALL checks</td></tr>
+  <tr><td>organization_id</td><td>BIGINT</td><td>FK → organizations(id), primary org</td></tr>
+  <tr><td>deleted_at</td><td>TIMESTAMPTZ</td><td>Soft delete</td></tr>
+  <tr><td>created_at / updated_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+
+<h3>4.4 user_organizations (Pivot)</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>user_id</td><td>BIGINT</td><td>FK → users(id) ON DELETE CASCADE</td></tr>
+  <tr><td>organization_id</td><td>BIGINT</td><td>FK → organizations(id) ON DELETE CASCADE</td></tr>
+</table>
+<p><em>Many-to-many: user can access multiple organizations.</em></p>
+
+<h3>4.5 asset_types</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(100)</td><td>UNIQUE, NOT NULL</td></tr>
+  <tr><td>deleted_at</td><td>TIMESTAMPTZ</td><td>Soft delete</td></tr>
+  <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+<p><em>Laptop, Monitor, Server, Software, Printer, Network, etc.</em></p>
+
+<h3>4.6 asset_categories</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>parent_id</td><td>BIGINT</td><td>FK → asset_categories(id) ON DELETE SET NULL</td></tr>
+  <tr><td>type_id</td><td>BIGINT</td><td>FK → asset_types(id) ON DELETE CASCADE, NOT NULL</td></tr>
+  <tr><td>deleted_at</td><td>TIMESTAMPTZ</td><td>Soft delete</td></tr>
+  <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+
+<h3>4.7 assets</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>type</td><td>VARCHAR(100)</td><td>Free-text (fallback)</td></tr>
+  <tr><td>type_id</td><td>BIGINT</td><td>FK → asset_types(id)</td></tr>
+  <tr><td>category_id</td><td>BIGINT</td><td>FK → asset_categories(id)</td></tr>
+  <tr><td>serial</td><td>VARCHAR(255)</td><td>UNIQUE</td></tr>
+  <tr><td>status</td><td>VARCHAR(50)</td><td>active/inactive/maintenance/retired</td></tr>
+  <tr><td>location</td><td>VARCHAR(255)</td><td></td></tr>
+  <tr><td>assigned_to</td><td>BIGINT</td><td>FK → users(id)</td></tr>
+  <tr><td>organization_id</td><td>BIGINT</td><td>FK → organizations(id), scope</td></tr>
+  <tr><td>created_by / updated_by / deleted_by</td><td>BIGINT</td><td>FK → users(id), audit trail</td></tr>
+  <tr><td>deleted_at</td><td>TIMESTAMPTZ</td><td>Soft delete</td></tr>
+</table>
+
+<h3>4.8 tickets</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>title</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>description</td><td>TEXT</td><td></td></tr>
+  <tr><td>status</td><td>VARCHAR(50)</td><td>open/in_progress/resolved/closed</td></tr>
+  <tr><td>priority</td><td>VARCHAR(50)</td><td>low/medium/high/critical</td></tr>
+  <tr><td>asset_id</td><td>BIGINT</td><td>FK → assets(id) ON DELETE SET NULL</td></tr>
+  <tr><td>assigned_to</td><td>BIGINT</td><td>FK → users(id) ON DELETE SET NULL</td></tr>
+  <tr><td>organization_id</td><td>BIGINT</td><td>FK → organizations(id), scope</td></tr>
+  <tr><td>created_by / updated_by / deleted_by</td><td>BIGINT</td><td>FK → users(id), audit trail</td></tr>
+  <tr><td>deleted_at</td><td>TIMESTAMPTZ</td><td>Soft delete</td></tr>
+</table>
+
+<h3>4.9 roles</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(100)</td><td>UNIQUE, NOT NULL</td></tr>
+  <tr><td>label</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+  <tr><td>is_admin</td><td>BOOLEAN</td><td>DEFAULT FALSE, bypass content permissions</td></tr>
+  <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT NOW()</td></tr>
+</table>
+
+<h3>4.10 permissions</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>id</td><td>BIGSERIAL</td><td>PK</td></tr>
+  <tr><td>name</td><td>VARCHAR(255)</td><td>UNIQUE — format: module.action</td></tr>
+  <tr><td>label</td><td>VARCHAR(255)</td><td>Display name</td></tr>
+  <tr><td>module</td><td>VARCHAR(100)</td><td>tickets, assets, users, types, categories, settings</td></tr>
+  <tr><td>action</td><td>VARCHAR(100)</td><td>create, read, read.own, update, delete, bulk_delete, assign</td></tr>
+</table>
+
+<h3>4.11 role_permissions (Pivot)</h3>
+<table class="schema">
+  <tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+  <tr><td>role_id</td><td>BIGINT</td><td>FK → roles(id) ON DELETE CASCADE</td></tr>
+  <tr><td>permission_id</td><td>BIGINT</td><td>FK → permissions(id) ON DELETE CASCADE</td></tr>
+</table>
+<p><em>Many-to-many: assigns permissions to roles.</em></p>
+
+<!-- ===== ROLE HIERARCHY ===== -->
+<h2>5. Role Hierarchy</h2>
+<div class="box">
+<pre>
+Superuser (is_superuser=true — user flag, NOT a role)
+  └── Bypass ALL permission checks
+  └── Can manage roles & permissions
+  └── Set directly via database (no API)
+
+Superadmin (role)
+  └── ALL permissions including settings.*
+  └── Can manage roles & permissions via UI
+  └── CANNOT create superuser accounts
+
+Admin (role, is_admin=true)
+  └── Bypass content permissions (tickets.*, assets.*, users.*)
+  └── CANNOT access settings.* or Bin (403)
+
+Agent / Editor (role)
+  └── Must have explicit permissions
+  └── Can only edit within own org scope
+  └── Cannot delete
+
+User (role)
+  └── Can only create tickets
+  └── Can view own tickets (read.own)
+</pre>
+</div>
+
+<!-- ===== PERMISSION MATRIX ===== -->
+<h2>6. Permission Matrix</h2>
+<table class="schema">
+  <tr><th>Module</th><th>Superuser</th><th>Superadmin</th><th>Admin</th><th>Agent</th><th>User</th></tr>
+  <tr><td>tickets.*</td><td>✅ bypass</td><td>✅ all</td><td>✅ bypass</td><td>✅ explicit</td><td>create only</td></tr>
+  <tr><td>assets.*</td><td>✅ bypass</td><td>✅ all</td><td>✅ bypass</td><td>✅ explicit</td><td>❌</td></tr>
+  <tr><td>users.*</td><td>✅ bypass</td><td>✅ all</td><td>✅ bypass</td><td>❌</td><td>❌</td></tr>
+  <tr><td>types.*</td><td>✅ bypass</td><td>✅ all</td><td>✅ all</td><td>❌</td><td>❌</td></tr>
+  <tr><td>categories.*</td><td>✅ bypass</td><td>✅ all</td><td>✅ all</td><td>❌</td><td>❌</td></tr>
+  <tr><td>settings.*</td><td>✅ bypass</td><td>✅ all</td><td>❌ 403</td><td>❌</td><td>❌</td></tr>
+  <tr><td>Bin</td><td>✅ bypass</td><td>✅ all</td><td>❌ 403</td><td>❌</td><td>❌</td></tr>
+  <tr><td>Holding/Org</td><td>✅ bypass</td><td>✅ settings.read</td><td>❌</td><td>❌</td><td>❌</td></tr>
+</table>
+
+<!-- ===== SCOPE ===== -->
+<h2>7. Scope &amp; Multi-Tenant</h2>
+<div class="box">
+  <p>Every data record (user, asset, ticket) is tied to an <code>organization_id</code>. Organizations are hierarchical within holdings using materialized paths.</p>
+  <p><strong>Scope Filter:</strong> When a user makes a request, the middleware:</p>
+  <ol>
+    <li>Extracts <code>org_ids</code> and <code>org_paths</code> from JWT</li>
+    <li>Repository queries descendant orgs via <code>path LIKE '/parent_id/%'</code></li>
+    <li>Adds <code>WHERE organization_id = ANY($accessible_org_ids)</code> to queries</li>
+  </ol>
+  <p>Superuser bypasses all scope filters.</p>
+</div>
+
+<!-- ===== API ENDPOINTS ===== -->
+<h2>8. API Endpoints</h2>
+<div class="box">
+<table class="schema">
+  <tr><th>Method</th><th>Path</th><th>Permission</th><th>Description</th></tr>
+  <tr><td>POST</td><td>/api/auth/login</td><td>Public</td><td>Login, returns JWT</td></tr>
+  <tr><td>GET</td><td>/api/auth/me</td><td>Auth</td><td>Current user + permissions</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Tickets</td></tr>
+  <tr><td>GET</td><td>/api/tickets</td><td>tickets.read</td><td>List (paginated, filterable)</td></tr>
+  <tr><td>POST</td><td>/api/tickets</td><td>tickets.create</td><td>Create</td></tr>
+  <tr><td>GET</td><td>/api/tickets/{id}</td><td>tickets.read</td><td>Get by ID</td></tr>
+  <tr><td>PUT</td><td>/api/tickets/{id}</td><td>tickets.update</td><td>Update</td></tr>
+  <tr><td>DELETE</td><td>/api/tickets/{id}</td><td>tickets.delete</td><td>Soft delete</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Assets</td></tr>
+  <tr><td>GET</td><td>/api/assets</td><td>assets.read</td><td>List</td></tr>
+  <tr><td>POST</td><td>/api/assets</td><td>assets.create</td><td>Create</td></tr>
+  <tr><td>GET</td><td>/api/assets/{id}</td><td>assets.read</td><td>Get by ID</td></tr>
+  <tr><td>PUT</td><td>/api/assets/{id}</td><td>assets.update</td><td>Update</td></tr>
+  <tr><td>DELETE</td><td>/api/assets/{id}</td><td>assets.delete</td><td>Soft delete</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Admin — Users</td></tr>
+  <tr><td>GET</td><td>/api/users</td><td>users.read</td><td>List users</td></tr>
+  <tr><td>POST</td><td>/api/users</td><td>users.create</td><td>Create user</td></tr>
+  <tr><td>GET</td><td>/api/users/{id}</td><td>users.read</td><td>Get user</td></tr>
+  <tr><td>PUT</td><td>/api/users/{id}</td><td>users.update</td><td>Update user</td></tr>
+  <tr><td>DELETE</td><td>/api/users/{id}</td><td>users.delete</td><td>Soft delete</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Admin — Roles &amp; Permissions</td></tr>
+  <tr><td>GET</td><td>/api/roles</td><td>settings.read</td><td>List roles</td></tr>
+  <tr><td>POST</td><td>/api/roles</td><td>settings.update</td><td>Create role</td></tr>
+  <tr><td>PUT</td><td>/api/roles/{id}</td><td>settings.update</td><td>Update role</td></tr>
+  <tr><td>DELETE</td><td>/api/roles/{id}</td><td>settings.update</td><td>Delete role</td></tr>
+  <tr><td>GET</td><td>/api/roles/{id}/permissions</td><td>settings.read</td><td>Get role permissions</td></tr>
+  <tr><td>PUT</td><td>/api/roles/{id}/permissions</td><td>settings.update</td><td>Set role permissions</td></tr>
+  <tr><td>GET</td><td>/api/permissions</td><td>settings.read</td><td>List all permissions</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Admin — Holdings &amp; Organizations</td></tr>
+  <tr><td>GET</td><td>/api/holdings</td><td>settings.read</td><td>List holdings</td></tr>
+  <tr><td>POST</td><td>/api/holdings</td><td>settings.update</td><td>Create holding</td></tr>
+  <tr><td>GET</td><td>/api/organizations</td><td>settings.read</td><td>List organizations</td></tr>
+  <tr><td>POST</td><td>/api/organizations</td><td>settings.update</td><td>Create organization</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Admin — Asset Types &amp; Categories</td></tr>
+  <tr><td>GET</td><td>/api/asset-types</td><td>types.read</td><td>List types</td></tr>
+  <tr><td>POST</td><td>/api/asset-types</td><td>types.create</td><td>Create type</td></tr>
+  <tr><td>PUT</td><td>/api/asset-types/{id}</td><td>types.update</td><td>Update type</td></tr>
+  <tr><td>DELETE</td><td>/api/asset-types/{id}</td><td>types.delete</td><td>Soft delete type</td></tr>
+  <tr><td>GET</td><td>/api/asset-categories</td><td>categories.read</td><td>List categories</td></tr>
+  <tr><td>POST</td><td>/api/asset-categories</td><td>categories.create</td><td>Create category</td></tr>
+  <tr><td>PUT</td><td>/api/asset-categories/{id}</td><td>categories.update</td><td>Update category</td></tr>
+  <tr><td>DELETE</td><td>/api/asset-categories/{id}</td><td>categories.delete</td><td>Soft delete category</td></tr>
+  <tr><td colspan="4" style="background:#f1f5f9;font-weight:600;">Bin</td></tr>
+  <tr><td>GET</td><td>/api/bin</td><td>settings.read</td><td>List deleted items</td></tr>
+  <tr><td>POST</td><td>/api/bin/{type}/{id}/restore</td><td>settings.update</td><td>Restore item</td></tr>
+  <tr><td>DELETE</td><td>/api/bin/{type}/{id}</td><td>settings.update</td><td>Permanently delete</td></tr>
+</table>
+</div>
+
+<!-- ===== SEED DATA ===== -->
+<h2>9. Default Development Credentials</h2>
+<table class="schema">
+  <tr><th>Email</th><th>Password</th><th>Role</th></tr>
+  <tr><td>superuser@leah.lan</td><td>leah</td><td>Superuser (bypass all)</td></tr>
+  <tr><td>superadmin@leah.lan</td><td>leah</td><td>Superadmin (all permissions)</td></tr>
+  <tr><td>admin@leah.lan</td><td>leah</td><td>Admin (content bypass)</td></tr>
+  <tr><td>agent@leah.lan</td><td>leah</td><td>Agent (explicit permissions)</td></tr>
+  <tr><td>user@leah.lan</td><td>leah</td><td>User (limited)</td></tr>
+</table>
+<p style="color:#ef4444;font-size:0.85rem;">⚠️ Development only. Change passwords in production.</p>
+
+<!-- ===== DEPLOYMENT ===== -->
+<h2>10. Deployment</h2>
+<div class="box">
+  <pre>
+  # Build
+  cd backend && go build -o leah ./cmd/api
+  cd frontend && npm install && npm run build
+
+  # Run (production)
+  DATABASE_URL="postgres://user:pass@localhost:5432/leah" ./backend/leah
+
+  # Systemd service
+  [Service]
+  ExecStart=/var/www/leah.lan/backend/leah
+  Environment=DATABASE_URL=postgres://...
+  Environment=JWT_SECRET=...
+  Restart=always
+  </pre>
+  <p>Single binary. No runtime dependencies. Nginx serves <code>frontend/dist/</code> and reverse proxies <code>/api/*</code> to Go binary.</p>
+</div>
+
+</div>
+</body>
+</html>
