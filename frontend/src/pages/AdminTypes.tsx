@@ -5,6 +5,7 @@ import { useState } from 'react'
 export default function AdminTypes() {
   const queryClient = useQueryClient()
   const [editId, setEditId] = useState<number | null>(null)
+  const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
 
   const { data: types } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
@@ -24,16 +25,16 @@ export default function AdminTypes() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
   })
 
-  function reset() { setEditId(null); setName('') }
+  function reset() { setEditId(null); setName(''); setShowForm(false) }
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Asset Types</h1>
-        <button onClick={() => { reset(); setName('') }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ New Type</button>
+        {!showForm && <button onClick={() => setShowForm(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ New Type</button>}
       </div>
 
-      {(editId !== null || name) && !editId && (
+      {showForm && editId === null && (
         <form onSubmit={e => { e.preventDefault(); create.mutate() }} className="bg-white rounded-lg shadow p-6 mb-6 flex gap-4 items-end">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Type Name</label>
