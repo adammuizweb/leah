@@ -15,6 +15,7 @@ const (
 	CtxKeyUserEmail   ctxKey = "user_email"
 	CtxKeyUserRole    ctxKey = "user_role"
 	CtxKeyPermissions ctxKey = "permissions"
+	CtxKeyIsSuperuser ctxKey = "is_superuser"
 )
 
 func Auth(secret string) func(http.Handler) http.Handler {
@@ -52,8 +53,8 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			userID := int64(claims["user_id"].(float64))
 			email, _ := claims["email"].(string)
 			role, _ := claims["role"].(string)
+			isSuper, _ := claims["is_superuser"].(bool)
 
-			// Extract permissions from claims — stored as []any, convert to []string
 			var perms []string
 			if rawPerms, ok := claims["perms"].([]any); ok {
 				for _, p := range rawPerms {
@@ -67,6 +68,7 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, CtxKeyUserEmail, email)
 			ctx = context.WithValue(ctx, CtxKeyUserRole, role)
 			ctx = context.WithValue(ctx, CtxKeyPermissions, perms)
+			ctx = context.WithValue(ctx, CtxKeyIsSuperuser, isSuper)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -78,8 +80,17 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			perms, _ := r.Context().Value(CtxKeyPermissions).([]string)
 			role, _ := r.Context().Value(CtxKeyUserRole).(string)
+			isSuper, _ := r.Context().Value(CtxKeyIsSuperuser).(bool)
 
-			if role == "admin" {
+			// Superuser bypasses ALL checks
+			if isSuper {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Admin role bypasses content permissions (tickets, assets, users),
+			// but NOT settings.* (role/permission management)
+			if role == "admin" && !strings.HasPrefix(permission, "settings.") {
 				next.ServeHTTP(w, r)
 				return
 			}

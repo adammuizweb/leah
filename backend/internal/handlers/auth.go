@@ -15,6 +15,7 @@ type Claims struct {
 	Email       string   `json:"email"`
 	Role        string   `json:"role"`
 	Permissions []string `json:"perms"`
+	IsSuperuser bool     `json:"is_superuser"`
 	jwt.RegisteredClaims
 }
 
@@ -62,6 +63,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Email:       user.Email,
 		Role:        user.Role,
 		Permissions: permNames,
+		IsSuperuser: user.IsSuperuser,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

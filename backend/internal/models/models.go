@@ -35,6 +35,7 @@ type User struct {
 	PasswordHash string     `json:"-"`
 	RoleID       *int64     `json:"role_id"`
 	Role         string     `json:"role"`
+	IsSuperuser  bool       `json:"is_superuser"`
 	CreatedAt    time.Time  `json:"created_at"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
 }

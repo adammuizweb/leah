@@ -32,11 +32,12 @@ INSERT INTO permissions (name, label, module, action) VALUES
     ('settings.update', 'Update settings', 'settings', 'update')
 ON CONFLICT (name) DO NOTHING;
 
--- Admin — all permissions
+-- Admin — all content permissions (NOT settings.* — only superuser bypasses)
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
 WHERE r.name = 'admin'
+  AND p.module != 'settings'
 ON CONFLICT DO NOTHING;
 
 -- Agent — ticket & asset management (except delete)
@@ -57,6 +58,12 @@ FROM roles r, permissions p
 WHERE r.name = 'user'
   AND p.name IN ('tickets.create', 'tickets.read.own')
 ON CONFLICT DO NOTHING;
+
+-- Superuser (mutlak bypass all permissions)
+-- Password harus di-generate ulang via bcrypt, jangan copy dari sini
+-- INSERT INTO users (email, name, password_hash, role_id, is_superuser)
+-- VALUES ('az@adammuiz.com', 'Adam Muiz', '<bcrypt-hash>', (SELECT id FROM roles WHERE name = 'admin'), true)
+-- ON CONFLICT (email) DO UPDATE SET is_superuser = true;
 
 -- Test users (password for all: leah) — DEV ONLY
 -- Generated with bcrypt, cost=12, salt auto

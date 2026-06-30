@@ -142,9 +142,9 @@ func (r *Repository) DeleteAsset(ctx context.Context, id int64) error {
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	u := &models.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id = u.role_id WHERE u.email=$1`, email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.CreatedAt, &u.DeletedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -154,9 +154,9 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.
 func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id = u.role_id WHERE u.id=$1`, id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.CreatedAt, &u.DeletedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -187,7 +187,7 @@ func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]mo
 
 func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id=u.role_id ORDER BY u.created_at DESC`,
 	)
 	if err != nil {
@@ -197,7 +197,7 @@ func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	users := make([]models.User, 0)
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.CreatedAt, &u.DeletedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

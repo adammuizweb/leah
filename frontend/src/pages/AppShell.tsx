@@ -2,7 +2,7 @@ import { Link, Outlet } from 'react-router-dom'
 import { useAuth } from '../services/auth'
 
 export default function AppShell() {
-  const { user, logout } = useAuth()
+  const { user, logout, permissions } = useAuth()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -17,7 +17,7 @@ export default function AppShell() {
                 <Link to="/dashboard" className="text-gray-600 hover:text-gray-900">Dashboard</Link>
                 <Link to="/tickets" className="text-gray-600 hover:text-gray-900">Tickets</Link>
                 <Link to="/assets" className="text-gray-600 hover:text-gray-900">Assets</Link>
-                {user?.role === 'admin' && <Link to="/admin" className="text-gray-600 hover:text-indigo-600 font-medium">Admin</Link>}
+                {(user?.role === 'admin' || permissions.includes('settings.read')) && <Link to="/admin" className="text-gray-600 hover:text-indigo-600 font-medium">Admin</Link>}
               </div>
             </div>
             {user && (
