@@ -11,17 +11,20 @@ export default function Tickets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { user, permissions } = useAuth()
-  const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('tickets.bulk_delete')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assetId, setAssetId] = useState<number | ''>('')
+  const [priority, setPriority] = useState('medium')
+  const [status, setStatus] = useState('open')
   const [assetError, setAssetError] = useState(false)
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [holdingFilter, setHoldingFilter] = useState<number | ''>('')
+  const [orgFilter, setOrgFilter] = useState<number | ''>('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -30,12 +33,19 @@ export default function Tickets() {
   if (search) params.search = search
   if (statusFilter) params.status = statusFilter
   if (priorityFilter) params.priority = priorityFilter
+  if (holdingFilter) params.holding_id = String(holdingFilter)
+  if (orgFilter) params.organization_id = String(orgFilter)
 
   const { data: result } = useQuery({ queryKey: ['tickets', params], queryFn: () => api.tickets.list(params) })
   const { data: assets } = useQuery({ queryKey: ['assets-all'], queryFn: () => api.assets.list({ per_page: '999' }) })
+  const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
+
   const assetMap = new Map(assets?.data?.map(a => [a.id, a]) || [])
+  const filteredOrgs = holdingFilter ? orgs?.filter(o => o.holding_id === holdingFilter) : orgs
 
   const canEdit = (t: Ticket) => user?.is_superuser || user?.role === 'admin' || t.created_by === user?.id
+  const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('tickets.bulk_delete')
   const allSelected = (result?.data?.length || 0) > 0 && selected.size === (result?.data?.length || 0)
 
   const createMutation = useMutation({
@@ -56,14 +66,15 @@ export default function Tickets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function resetForm() { setShowForm(false); setEditId(null); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false) }
-  function openEdit(t: Ticket) { setEditId(t.id); setTitle(t.title); setDescription(t.description); setAssetId(t.asset_id || ''); setShowForm(true) }
+  function resetForm() { setShowForm(false); setEditId(null); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false); setPriority('medium'); setStatus('open') }
+  function openEdit(t: Ticket) { setEditId(t.id); setTitle(t.title); setDescription(t.description); setAssetId(t.asset_id || ''); setPriority(t.priority); setStatus(t.status); setShowForm(true) }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!assetId) { setAssetError(true); return }
     setAssetError(false)
-    const body = { title, description, asset_id: assetId } as Partial<Ticket>
+    const body = { title, description, asset_id: assetId, priority } as Partial<Ticket>
+    if (editId) { (body as any).status = status }
     editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
 
@@ -110,6 +121,20 @@ export default function Tickets() {
             {assets?.data?.map(a => <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>)}
           </select>
           {assetError && <p className="text-xs text-red-500">Asset is required</p>}
+          <select value={priority} onChange={e => setPriority(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+          {editId && (
+            <select value={status} onChange={e => setStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+          )}
           <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Description" rows={3} />
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={resetForm} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
@@ -121,22 +146,21 @@ export default function Tickets() {
       <div className="bg-white rounded-lg shadow mb-4">
         <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search tickets..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+          <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All holdings</option>
+            {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+          <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm" disabled={!holdingFilter}>
+            <option value="">All orgs</option>
+            {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)} {o.name}</option>)}
+          </select>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select>
           <select value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All priorities</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select>
           <span className="text-xs text-gray-400">{result?.total || 0} tickets</span>
         </div>
 
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
+          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody className="divide-y divide-gray-200">
             {tickets.map(ticket => {
               const asset = ticket.asset_id ? assetMap.get(ticket.asset_id) : null
@@ -160,9 +184,7 @@ export default function Tickets() {
         <div className="px-4 py-3 border-t border-gray-200 flex justify-between items-center text-sm">
           <div className="flex items-center gap-2">
             <span className="text-gray-500">Rows:</span>
-            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }} className="border rounded px-2 py-1 text-sm">
-              {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }} className="border rounded px-2 py-1 text-sm">{PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}</select>
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">

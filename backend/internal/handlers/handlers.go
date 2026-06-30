@@ -58,12 +58,16 @@ func parsePagination(r *http.Request) (page, perPage int) {
 
 func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
 	page, perPage := parsePagination(r)
+	orgID, _ := strconv.ParseInt(r.URL.Query().Get("organization_id"), 10, 64)
+	holdingID, _ := strconv.ParseInt(r.URL.Query().Get("holding_id"), 10, 64)
 	f := repository.TicketFilter{
-		Search:   r.URL.Query().Get("search"),
-		Status:   r.URL.Query().Get("status"),
-		Priority: r.URL.Query().Get("priority"),
-		Page:     page,
-		PerPage:  perPage,
+		Search:         r.URL.Query().Get("search"),
+		Status:         r.URL.Query().Get("status"),
+		Priority:       r.URL.Query().Get("priority"),
+		OrganizationID: orgID,
+		HoldingID:      holdingID,
+		Page:           page,
+		PerPage:        perPage,
 	}
 	result, err := h.svc.ListTickets(r.Context(), f)
 	if err != nil {
@@ -137,12 +141,16 @@ func (h *Handler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListAssets(w http.ResponseWriter, r *http.Request) {
 	page, perPage := parsePagination(r)
 	typeID, _ := strconv.ParseInt(r.URL.Query().Get("type_id"), 10, 64)
+	orgID, _ := strconv.ParseInt(r.URL.Query().Get("organization_id"), 10, 64)
+	holdingID, _ := strconv.ParseInt(r.URL.Query().Get("holding_id"), 10, 64)
 	f := repository.AssetFilter{
-		Search:  r.URL.Query().Get("search"),
-		Status:  r.URL.Query().Get("status"),
-		TypeID:  typeID,
-		Page:    page,
-		PerPage: perPage,
+		Search:         r.URL.Query().Get("search"),
+		Status:         r.URL.Query().Get("status"),
+		TypeID:         typeID,
+		OrganizationID: orgID,
+		HoldingID:      holdingID,
+		Page:           page,
+		PerPage:        perPage,
 	}
 	result, err := h.svc.ListAssets(r.Context(), f)
 	if err != nil {

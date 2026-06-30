@@ -48,11 +48,13 @@ func (r *Repository) scopeOrgIDs(ctx context.Context) []int64 {
 const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, created_at, updated_at`
 
 type TicketFilter struct {
-	Search   string
-	Status   string
-	Priority string
-	Page     int
-	PerPage  int
+	Search         string
+	Status         string
+	Priority       string
+	OrganizationID int64
+	HoldingID      int64
+	Page           int
+	PerPage        int
 }
 
 type PaginatedResult[T any] struct {
@@ -91,6 +93,16 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	if f.Priority != "" {
 		where += fmt.Sprintf(` AND t.priority = $%d`, aidx)
 		args = append(args, f.Priority)
+		aidx++
+	}
+	if f.OrganizationID > 0 {
+		where += fmt.Sprintf(` AND t.organization_id = $%d`, aidx)
+		args = append(args, f.OrganizationID)
+		aidx++
+	}
+	if f.HoldingID > 0 {
+		where += fmt.Sprintf(` AND t.organization_id IN (SELECT id FROM organizations WHERE holding_id = $%d)`, aidx)
+		args = append(args, f.HoldingID)
 		aidx++
 	}
 
@@ -171,11 +183,13 @@ func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
 const assetCols = `id, name, type, type_id, category_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
 
 type AssetFilter struct {
-	Search  string
-	Status  string
-	TypeID  int64
-	Page    int
-	PerPage int
+	Search         string
+	Status         string
+	TypeID         int64
+	OrganizationID int64
+	HoldingID      int64
+	Page           int
+	PerPage        int
 }
 
 func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedResult[models.Asset], error) {
@@ -205,6 +219,16 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 	if f.TypeID > 0 {
 		where += fmt.Sprintf(` AND a.type_id = $%d`, aidx)
 		args = append(args, f.TypeID)
+		aidx++
+	}
+	if f.OrganizationID > 0 {
+		where += fmt.Sprintf(` AND a.organization_id = $%d`, aidx)
+		args = append(args, f.OrganizationID)
+		aidx++
+	}
+	if f.HoldingID > 0 {
+		where += fmt.Sprintf(` AND a.organization_id IN (SELECT id FROM organizations WHERE holding_id = $%d)`, aidx)
+		args = append(args, f.HoldingID)
 		aidx++
 	}
 

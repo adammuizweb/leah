@@ -11,7 +11,6 @@ export default function Assets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { user, permissions } = useAuth()
-  const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('assets.bulk_delete')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
@@ -23,6 +22,8 @@ export default function Assets() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<number | ''>('')
+  const [holdingFilter, setHoldingFilter] = useState<number | ''>('')
+  const [orgFilter, setOrgFilter] = useState<number | ''>('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -31,16 +32,22 @@ export default function Assets() {
   if (search) params.search = search
   if (statusFilter) params.status = statusFilter
   if (typeFilter) params.type_id = String(typeFilter)
+  if (holdingFilter) params.holding_id = String(holdingFilter)
+  if (orgFilter) params.organization_id = String(orgFilter)
 
   const { data: result } = useQuery({ queryKey: ['assets', params], queryFn: () => api.assets.list(params) })
   const { data: assetTypes } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
   const { data: categories } = useQuery({ queryKey: ['asset-categories'], queryFn: api.assetCategories.list })
+  const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
 
   const typeMap = new Map(assetTypes?.map(t => [t.id, t.name]) || [])
   const catMap = new Map(categories?.map(c => [c.id, c.name]) || [])
   const filteredCats = typeId ? categories?.filter(c => c.type_id === typeId) : []
+  const filteredOrgs = holdingFilter ? orgs?.filter(o => o.holding_id === holdingFilter) : orgs
 
   const canEdit = (a: Asset) => user?.is_superuser || user?.role === 'admin' || a.created_by === user?.id
+  const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('assets.bulk_delete')
   const allSelected = (result?.data?.length || 0) > 0 && selected.size === (result?.data?.length || 0)
 
   const createMutation = useMutation({
@@ -131,23 +138,21 @@ export default function Assets() {
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search assets..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+          <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">All holdings</option>
+            {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+          <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm" disabled={!holdingFilter}>
+            <option value="">All orgs</option>
+            {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)} {o.name}</option>)}
+          </select>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option></select>
           <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All types</option>{assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <span className="text-xs text-gray-400">{result?.total || 0} assets</span>
         </div>
 
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
+          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody className="divide-y divide-gray-200">
             {assets.map(asset => (
               <tr key={asset.id} className={selected.has(asset.id) ? 'bg-indigo-50/50' : ''}>
@@ -169,9 +174,7 @@ export default function Assets() {
         <div className="px-4 py-3 border-t border-gray-200 flex justify-between items-center text-sm">
           <div className="flex items-center gap-2">
             <span className="text-gray-500">Rows:</span>
-            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }} className="border rounded px-2 py-1 text-sm">
-              {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }} className="border rounded px-2 py-1 text-sm">{PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}</select>
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
