@@ -58,20 +58,19 @@ WHERE r.name = 'user'
   AND p.name IN ('tickets.create', 'tickets.read.own')
 ON CONFLICT DO NOTHING;
 
--- Test admin user (password: admin)
+-- Test users (password for all: leah) — DEV ONLY
+-- Generated with bcrypt, cost=12, salt auto
 INSERT INTO users (email, name, password_hash, role_id)
-SELECT 'admin@leah.lan', 'Admin', '$2a$10$dummy_hash_replace_me', r.id
+SELECT 'admin@leah.lan', 'Admin', '$2b$12$I.NY04zy0/7HoIII.mUfzuhckWoKK4VsYBBOtOr6atm47gbCNMkfy', r.id
 FROM roles r WHERE r.name = 'admin'
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role_id = EXCLUDED.role_id;
 
--- Test agent user
 INSERT INTO users (email, name, password_hash, role_id)
-SELECT 'agent@leah.lan', 'Agent', '$2a$10$dummy_hash_replace_me', r.id
+SELECT 'agent@leah.lan', 'Agent', '$2b$12$I.NY04zy0/7HoIII.mUfzuhckWoKK4VsYBBOtOr6atm47gbCNMkfy', r.id
 FROM roles r WHERE r.name = 'agent'
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role_id = EXCLUDED.role_id;
 
--- Test regular user
 INSERT INTO users (email, name, password_hash, role_id)
-SELECT 'user@leah.lan', 'User', '$2a$10$dummy_hash_replace_me', r.id
+SELECT 'user@leah.lan', 'User', '$2b$12$I.NY04zy0/7HoIII.mUfzuhckWoKK4VsYBBOtOr6atm47gbCNMkfy', r.id
 FROM roles r WHERE r.name = 'user'
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role_id = EXCLUDED.role_id;

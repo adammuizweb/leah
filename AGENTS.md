@@ -58,6 +58,18 @@ PUT    /api/assets/:id
 DELETE /api/assets/:id
 ```
 
+## Development Credentials
+
+Semua seed users password: `leah`
+
+| Email | Role | Password |
+|-------|------|----------|
+| admin@leah.lan | Admin | leah |
+| agent@leah.lan | Agent | leah |
+| user@leah.lan | User | leah |
+
+⚠️ **Data seed hanya untuk development. Jangan dipakai di production.**
+
 ## Akses
 
 - Development: `http://leah.lan` (warp/rumah) atau `https://leah.jyavani.com`
