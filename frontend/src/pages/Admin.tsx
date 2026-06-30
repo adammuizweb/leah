@@ -1,34 +1,43 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import { useAuth } from '../services/auth'
 
-const cards = [
-  { to: '/admin/users', icon: '👥', title: 'Users', desc: 'Manage users, roles, and passwords' },
-  { to: '/admin/permissions', icon: '🔐', title: 'Permissions', desc: 'Create roles & assign permissions' },
-  { to: '/admin/types', icon: '📋', title: 'Asset Types', desc: 'Manage asset type categories (Laptop, Monitor, etc.)' },
-  { to: '/admin/categories', icon: '📂', title: 'Categories', desc: 'Manage asset sub-categories with hierarchy' },
-  { to: '/admin/bin', icon: '🗑️', title: 'Bin', desc: 'View, restore, or permanently delete items' },
+const modules = [
+  { to: '/admin/users', icon: '👥', label: 'Users', perm: 'users.read' },
+  { to: '/admin/permissions', icon: '🔐', label: 'Permissions', perm: 'settings.read' },
+  { to: '/admin/types', icon: '📋', label: 'Asset Types', perm: 'settings.read' },
+  { to: '/admin/categories', icon: '📂', label: 'Categories', perm: 'settings.read' },
+  { to: '/admin/bin', icon: '🗑️', label: 'Bin', perm: 'settings.read' },
 ]
 
 export default function Admin() {
   const location = useLocation()
-  const isIndex = location.pathname === '/admin'
+  const { user, permissions } = useAuth()
 
-  if (!isIndex) return <Outlet />
+  const can = (perm: string) => user?.role === 'admin' || user?.is_superuser || permissions.includes(perm)
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin</h1>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {cards.map(card => (
-          <Link
-            key={card.to}
-            to={card.to}
-            className="block p-6 bg-white rounded-xl border border-gray-200 hover:border-indigo-200 hover:shadow-lg transition-all"
-          >
-            <div className="text-3xl mb-3">{card.icon}</div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">{card.title}</h2>
-            <p className="text-sm text-gray-600">{card.desc}</p>
-          </Link>
-        ))}
+    <div className="flex gap-6">
+      <nav className="w-56 shrink-0">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Administration</h2>
+        <div className="space-y-1">
+          {modules.filter(m => can(m.perm)).map(m => (
+            <Link
+              key={m.to}
+              to={m.to}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                location.pathname.startsWith(m.to)
+                  ? 'bg-indigo-50 text-indigo-700 font-medium'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <span>{m.icon}</span>
+              {m.label}
+            </Link>
+          ))}
+        </div>
+      </nav>
+      <div className="flex-1 min-w-0">
+        <Outlet />
       </div>
     </div>
   )

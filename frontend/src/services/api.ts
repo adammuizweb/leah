@@ -25,6 +25,7 @@ export interface User {
   name: string
   role: string
   role_id: number | null
+  is_superuser?: boolean
   created_at: string
   deleted_at?: string | null
 }
