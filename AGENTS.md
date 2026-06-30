@@ -78,20 +78,6 @@ terikat ke `organization_id`. Scope otomatis di-filter berdasarkan path organiza
 - Middleware scope filter di setiap query (kecuali superadmin)
 - Backup DB sebelum migration besar: `pg_dump leah > /tmp/leah-$(date +%Y%m%d).sql`
 
-## Development Credentials
+## Credentials
 
-Semua seed users password: `leah`
-
-| Email | Role | Password |
-|-------|------|----------|
-| admin@leah.lan | Admin | leah |
-| agent@leah.lan | Agent | leah |
-| user@leah.lan | User | leah |
-
-⚠️ **Data seed hanya untuk development. Jangan dipakai di production.**
-
-## Akses
-
-- Development: `http://leah.lan` (warp/rumah) atau `https://leah.jyavani.com`
-- Server: `adam@192.168.1.2` (password: adam)
-- Database: `postgres://leah:leah@localhost:5432/leah`
+Lihat `journals/auth.md` (lokal, tidak di-push ke GitHub).

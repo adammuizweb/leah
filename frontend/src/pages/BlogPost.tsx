@@ -36,7 +36,7 @@ sudo -u postgres psql -d leah -f backend/migrations/003_seed.sql
 DATABASE_URL="postgres://leah:your-password@localhost:5432/leah" ./backend/leah
 \`\`\`
 
-Akses di http://localhost:8080. Login dengan superuser@leah.lan / leah.`,
+Akses di http://localhost:8080. Login dengan superuser@leah.lan (lihat password di dokumentasi lokal).`,
   },
   'architecture-overview': {
     title: 'Architecture Overview',
