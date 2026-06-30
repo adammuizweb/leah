@@ -63,3 +63,15 @@ func (s *Service) UpdateAsset(ctx context.Context, a *models.Asset) error {
 func (s *Service) DeleteAsset(ctx context.Context, id int64) error {
 	return s.repo.DeleteAsset(ctx, id)
 }
+
+func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	return s.repo.GetUserByEmail(ctx, email)
+}
+
+func (s *Service) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+	return s.repo.GetUserByID(ctx, id)
+}
+
+func (s *Service) GetUserPermissions(ctx context.Context, userID int64) ([]models.Permission, error) {
+	return s.repo.GetUserPermissions(ctx, userID)
+}

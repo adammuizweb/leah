@@ -6,12 +6,13 @@ import (
 	"os"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	"github.com/adammuiz/leah/internal/config"
 	"github.com/adammuiz/leah/internal/database"
 	"github.com/adammuiz/leah/internal/handlers"
+	leahmw "github.com/adammuiz/leah/internal/middleware"
 	"github.com/adammuiz/leah/internal/repository"
 	"github.com/adammuiz/leah/internal/services"
 )
@@ -28,11 +29,11 @@ func main() {
 
 	repo := repository.New(db)
 	svc := services.New(repo)
-	h := handlers.New(svc)
+	h := handlers.New(svc, cfg.JWTSecret)
 
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(chimw.Logger)
+	r.Use(chimw.Recoverer)
 	origins := os.Getenv("CORS_ORIGINS")
 	if origins == "" {
 		origins = "http://localhost:5173"
@@ -47,20 +48,29 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.Health)
 
-		r.Route("/tickets", func(r chi.Router) {
-			r.Get("/", h.ListTickets)
-			r.Post("/", h.CreateTicket)
-			r.Get("/{id}", h.GetTicket)
-			r.Put("/{id}", h.UpdateTicket)
-			r.Delete("/{id}", h.DeleteTicket)
-		})
+		// Auth — public
+		r.Post("/auth/login", h.Login)
 
-		r.Route("/assets", func(r chi.Router) {
-			r.Get("/", h.ListAssets)
-			r.Post("/", h.CreateAsset)
-			r.Get("/{id}", h.GetAsset)
-			r.Put("/{id}", h.UpdateAsset)
-			r.Delete("/{id}", h.DeleteAsset)
+		// Auth — protected
+		r.Group(func(r chi.Router) {
+			r.Use(leahmw.Auth(cfg.JWTSecret))
+			r.Get("/auth/me", h.Me)
+
+			r.Route("/tickets", func(r chi.Router) {
+				r.Get("/", h.ListTickets)
+				r.Post("/", h.CreateTicket)
+				r.Get("/{id}", h.GetTicket)
+				r.Put("/{id}", h.UpdateTicket)
+				r.Delete("/{id}", h.DeleteTicket)
+			})
+
+			r.Route("/assets", func(r chi.Router) {
+				r.Get("/", h.ListAssets)
+				r.Post("/", h.CreateAsset)
+				r.Get("/{id}", h.GetAsset)
+				r.Put("/{id}", h.UpdateAsset)
+				r.Delete("/{id}", h.DeleteAsset)
+			})
 		})
 	})
 

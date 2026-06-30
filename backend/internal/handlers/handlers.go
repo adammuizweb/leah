@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -11,11 +12,19 @@ import (
 )
 
 type Handler struct {
-	svc *services.Service
+	svc       *services.Service
+	jwtSecret string
 }
 
-func New(svc *services.Service) *Handler {
-	return &Handler{svc: svc}
+func New(svc *services.Service, jwtSecret string) *Handler {
+	return &Handler{svc: svc, jwtSecret: jwtSecret}
+}
+
+func decodeJSON(r *http.Request, v any) error {
+	if r.Body == nil {
+		return errors.New("request body is empty")
+	}
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
 func respond(w http.ResponseWriter, status int, data any) {

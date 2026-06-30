@@ -27,9 +27,28 @@ type Asset struct {
 }
 
 type User struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	PasswordHash string    `json:"-"`
+	RoleID       *int64    `json:"role_id"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthResponse struct {
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
+type Permission struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Module string `json:"module"`
+	Action string `json:"action"`
 }

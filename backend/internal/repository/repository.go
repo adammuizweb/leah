@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/adammuiz/leah/internal/models"
 )
@@ -136,4 +137,62 @@ func (r *Repository) DeleteAsset(ctx context.Context, id int64) error {
 		return fmt.Errorf("asset not found")
 	}
 	return nil
+}
+
+func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	u := &models.User{}
+	err := r.db.QueryRow(ctx,
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(r.name, '') as role, u.created_at
+		 FROM users u
+		 LEFT JOIN roles r ON r.id = u.role_id
+		 WHERE u.email = $1`, email,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, err
+	}
+	return u, nil
+}
+
+func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+	u := &models.User{}
+	err := r.db.QueryRow(ctx,
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(r.name, '') as role, u.created_at
+		 FROM users u
+		 LEFT JOIN roles r ON r.id = u.role_id
+		 WHERE u.id = $1`, id,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, err
+	}
+	return u, nil
+}
+
+func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]models.Permission, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT p.id, p.name, p.module, p.action
+		 FROM permissions p
+		 JOIN role_permissions rp ON rp.permission_id = p.id
+		 JOIN users u ON u.role_id = rp.role_id
+		 WHERE u.id = $1`, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	perms := make([]models.Permission, 0)
+	for rows.Next() {
+		var p models.Permission
+		if err := rows.Scan(&p.ID, &p.Name, &p.Module, &p.Action); err != nil {
+			return nil, err
+		}
+		perms = append(perms, p)
+	}
+	return perms, nil
 }
