@@ -18,6 +18,7 @@ export default function Assets() {
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
   const [status, setStatus] = useState('active')
+  const [orgId, setOrgId] = useState<number | ''>('')
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -68,13 +69,13 @@ export default function Assets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function resetForm() { setShowForm(false); setEditId(null); setName(''); setTypeId(''); setCategoryId(''); setSerial(''); setStatus('active') }
+  function resetForm() { setShowForm(false); setEditId(null); setName(''); setTypeId(''); setCategoryId(''); setSerial(''); setStatus('active'); setOrgId(user?.organization_id || '') }
   function openEdit(a: Asset) { setEditId(a.id); setName(a.name); setTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setSerial(a.serial || ''); setStatus(a.status); setShowForm(true) }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedType = assetTypes?.find(t => t.id === typeId)
-    const body = { name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial, status } as Partial<Asset>
+    const body = { name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial, status, organization_id: orgId || null } as Partial<Asset>
     editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
 
@@ -128,6 +129,14 @@ export default function Assets() {
           <select value={status} onChange={e => setStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
             <option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option>
           </select>
+          {!editId && (
+            <select value={orgId} onChange={e => setOrgId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm">
+              {orgs?.map(o => {
+                const h = holdings?.find(hh => hh.id === o.holding_id)
+                return <option key={o.id} value={o.id}>{h?.name || ''} / {'—'.repeat(o.level)} {o.name}</option>
+              })}
+            </select>
+          )}
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={resetForm} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{editId ? 'Update' : 'Create'}</button>

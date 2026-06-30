@@ -84,7 +84,7 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.CreatedBy = userIDFromCtx(r)
-	t.OrganizationID = orgIDFromCtx(r)
+	if t.OrganizationID == nil { t.OrganizationID = orgIDFromCtx(r) }
 	if err := h.svc.CreateTicket(r.Context(), &t); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -167,7 +167,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.CreatedBy = int64Ptr(userIDFromCtx(r))
-	a.OrganizationID = orgIDFromCtx(r)
+	if a.OrganizationID == nil { a.OrganizationID = orgIDFromCtx(r) }
 	if err := h.svc.CreateAsset(r.Context(), &a); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
