@@ -8,13 +8,12 @@ export default function AdminCategories() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState(empty)
   const [editId, setEditId] = useState<number | null>(null)
+  const [showForm, setShowForm] = useState(false)
 
   const { data: types } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
   const { data: cats } = useQuery({ queryKey: ['asset-categories'], queryFn: api.assetCategories.list })
 
   const filtered = form.type_id ? cats?.filter(c => c.type_id === form.type_id) : cats
-
-  const show = editId !== null || form.name
 
   const create = useMutation({
     mutationFn: () => api.assetCategories.create({ name: form.name, type_id: form.type_id as number, parent_id: form.parent_id || null }),
@@ -31,11 +30,18 @@ export default function AdminCategories() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-categories'] }),
   })
 
-  function reset() { setForm(empty); setEditId(null) }
+  function reset() { setForm(empty); setEditId(null); setShowForm(false) }
 
   function openEdit(c: AssetCategory) {
     setEditId(c.id)
+    setShowForm(true)
     setForm({ name: c.name, type_id: c.type_id, parent_id: c.parent_id || '' })
+  }
+
+  function openNew() {
+    setEditId(null)
+    setShowForm(true)
+    setForm({ name: '', type_id: types?.[0]?.id || '', parent_id: '' })
   }
 
   const byType = new Map<number, typeof cats>()
@@ -49,12 +55,10 @@ export default function AdminCategories() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Asset Categories</h1>
-        {!show && (
-          <button onClick={() => setForm({ name: '', type_id: types?.[0]?.id || '', parent_id: '' })} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ New Category</button>
-        )}
+        {!showForm && <button onClick={openNew} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">+ New Category</button>}
       </div>
 
-      {show && (
+      {showForm && (
         <form onSubmit={e => { e.preventDefault(); editId ? update.mutate() : create.mutate() }} className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="grid sm:grid-cols-3 gap-4">
             <div>
