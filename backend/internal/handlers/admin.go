@@ -249,6 +249,21 @@ func (h *Handler) CreateAssetType(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, t)
 }
 
+func (h *Handler) UpdateAssetType(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var t models.AssetType
+	if err := decodeJSON(r, &t); err != nil {
+		respond(w, 400, map[string]string{"error": "invalid request body"})
+		return
+	}
+	t.ID = id
+	if err := h.svc.UpdateAssetType(r.Context(), &t); err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, t)
+}
+
 func (h *Handler) DeleteAssetType(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err := h.svc.DeleteAssetType(r.Context(), id); err != nil {

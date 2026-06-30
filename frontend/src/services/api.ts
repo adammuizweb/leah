@@ -151,6 +151,7 @@ export const api = {
   assetTypes: {
     list: () => request<AssetType[]>('/asset-types'),
     create: (name: string) => request<AssetType>('/asset-types', { method: 'POST', body: JSON.stringify({ name }) }),
+    update: (id: number, name: string) => request<AssetType>(`/asset-types/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
     delete: (id: number) => request<void>(`/asset-types/${id}`, { method: 'DELETE' }),
   },
 

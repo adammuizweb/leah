@@ -27,6 +27,16 @@ INSERT INTO permissions (name, label, module, action) VALUES
     ('users.read',   'View users',   'users', 'read'),
     ('users.update', 'Update users', 'users', 'update'),
     ('users.delete', 'Delete users', 'users', 'delete'),
+    -- Types
+    ('types.read',   'View asset types',   'types', 'read'),
+    ('types.create', 'Create asset types', 'types', 'create'),
+    ('types.update', 'Update asset types', 'types', 'update'),
+    ('types.delete', 'Delete asset types', 'types', 'delete'),
+    -- Categories
+    ('categories.read',   'View categories',   'categories', 'read'),
+    ('categories.create', 'Create categories', 'categories', 'create'),
+    ('categories.update', 'Update categories', 'categories', 'update'),
+    ('categories.delete', 'Delete categories', 'categories', 'delete'),
     -- Settings
     ('settings.read',   'View settings',   'settings', 'read'),
     ('settings.update', 'Update settings', 'settings', 'update')
@@ -37,7 +47,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
 WHERE r.name = 'admin'
-  AND p.module != 'settings'
+  AND p.module NOT IN ('settings')
 ON CONFLICT DO NOTHING;
 
 -- Agent — ticket & asset management (except delete)

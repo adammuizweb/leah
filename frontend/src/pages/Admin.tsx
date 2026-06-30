@@ -4,8 +4,8 @@ import { useAuth } from '../services/auth'
 const modules = [
   { to: '/admin/users', icon: '👥', label: 'Users', perm: 'users.read' },
   { to: '/admin/permissions', icon: '🔐', label: 'Permissions', perm: 'settings.read' },
-  { to: '/admin/types', icon: '📋', label: 'Asset Types', perm: 'settings.read' },
-  { to: '/admin/categories', icon: '📂', label: 'Categories', perm: 'settings.read' },
+  { to: '/admin/types', icon: '📋', label: 'Asset Types', perm: 'types.read' },
+  { to: '/admin/categories', icon: '📂', label: 'Categories', perm: 'categories.read' },
   { to: '/admin/bin', icon: '🗑️', label: 'Bin', perm: 'settings.read' },
 ]
 

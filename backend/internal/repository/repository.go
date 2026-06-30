@@ -473,6 +473,11 @@ func (r *Repository) CreateAssetType(ctx context.Context, t *models.AssetType) e
 	return r.db.QueryRow(ctx, `INSERT INTO asset_types (name) VALUES ($1) RETURNING id, created_at`, t.Name).Scan(&t.ID, &t.CreatedAt)
 }
 
+func (r *Repository) UpdateAssetType(ctx context.Context, t *models.AssetType) error {
+	_, err := r.db.Exec(ctx, `UPDATE asset_types SET name=$1 WHERE id=$2`, t.Name, t.ID)
+	return err
+}
+
 func (r *Repository) DeleteAssetType(ctx context.Context, id int64) error {
 	tag, err := r.db.Exec(ctx, `DELETE FROM asset_types WHERE id=$1`, id)
 	if err != nil {

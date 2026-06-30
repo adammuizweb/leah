@@ -101,6 +101,7 @@ func (s *Service) RestoreItem(ctx context.Context, typ string, id int64) error  
 func (s *Service) PermanentlyDelete(ctx context.Context, typ string, id int64) error { return s.repo.PermanentlyDelete(ctx, typ, id) }
 func (s *Service) ListAssetTypes(ctx context.Context) ([]models.AssetType, error)     { return s.repo.ListAssetTypes(ctx) }
 func (s *Service) CreateAssetType(ctx context.Context, t *models.AssetType) error     { return s.repo.CreateAssetType(ctx, t) }
+func (s *Service) UpdateAssetType(ctx context.Context, t *models.AssetType) error     { return s.repo.UpdateAssetType(ctx, t) }
 func (s *Service) DeleteAssetType(ctx context.Context, id int64) error                { return s.repo.DeleteAssetType(ctx, id) }
 func (s *Service) ListAssetCategories(ctx context.Context) ([]models.AssetCategory, error) { return s.repo.ListAssetCategories(ctx) }
 func (s *Service) CreateAssetCategory(ctx context.Context, c *models.AssetCategory) error   { return s.repo.CreateAssetCategory(ctx, c) }
