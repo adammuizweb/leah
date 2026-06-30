@@ -3,11 +3,14 @@ import { api, type Ticket } from '../services/api'
 import { useState } from 'react'
 import Modal from '../components/Modal'
 import { useToast } from '../components/Toast'
+import { useAuth } from '../services/auth'
 
 export default function Tickets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assetId, setAssetId] = useState<number | ''>('')
@@ -25,22 +28,21 @@ export default function Tickets() {
   params.per_page = '10'
   params.page = String(page)
 
-  const { data: result } = useQuery({
-    queryKey: ['tickets', params],
-    queryFn: () => api.tickets.list(params),
-  })
-
+  const { data: result } = useQuery({ queryKey: ['tickets', params], queryFn: () => api.tickets.list(params) })
   const { data: assets } = useQuery({ queryKey: ['assets-all'], queryFn: () => api.assets.list({ per_page: '999' }) })
-
   const assetMap = new Map(assets?.data?.map(a => [a.id, a]) || [])
+
+  const canEdit = (t: Ticket) => user?.is_superuser || user?.role === 'admin' || t.created_by === user?.id
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<Ticket>) => api.tickets.create(data),
-    onSuccess: () => {
-      toast('Ticket created', 'success')
-      queryClient.invalidateQueries({ queryKey: ['tickets'] })
-      setShowForm(false); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false)
-    },
+    onSuccess: () => { toast('Ticket created', 'success'); queryClient.invalidateQueries({ queryKey: ['tickets'] }); resetForm() },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: (d: Partial<Ticket>) => api.tickets.update(editId!, d),
+    onSuccess: () => { toast('Ticket updated', 'success'); queryClient.invalidateQueries({ queryKey: ['tickets'] }); resetForm() },
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
@@ -50,11 +52,15 @@ export default function Tickets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
+  function resetForm() { setShowForm(false); setEditId(null); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false) }
+  function openEdit(t: Ticket) { setEditId(t.id); setTitle(t.title); setDescription(t.description); setAssetId(t.asset_id || ''); setShowForm(true) }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!assetId) { setAssetError(true); return }
     setAssetError(false)
-    createMutation.mutate({ title, description, asset_id: assetId } as Partial<Ticket>)
+    const body = { title, description, asset_id: assetId } as Partial<Ticket>
+    editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
 
   const tickets = result?.data || []
@@ -64,10 +70,10 @@ export default function Tickets() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Tickets</h1>
-        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Ticket'}</button>
+        {!showForm && <button onClick={() => { resetForm(); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">+ New Ticket</button>}
       </div>
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="New Ticket">
+      <Modal open={showForm} onClose={resetForm} title={editId ? 'Edit Ticket' : 'New Ticket'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Title" required />
           <select value={assetId} onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }} className={`w-full border rounded-lg px-3 py-2 text-sm ${assetError ? 'border-red-400' : ''}`}>
@@ -77,8 +83,8 @@ export default function Tickets() {
           {assetError && <p className="text-xs text-red-500">Asset is required</p>}
           <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Description" rows={3} />
           <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Create</button>
+            <button type="button" onClick={resetForm} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{editId ? 'Update' : 'Create'}</button>
           </div>
         </form>
       </Modal>
@@ -121,14 +127,11 @@ export default function Tickets() {
                   <td className="px-6 py-4 text-sm text-gray-900">{ticket.title}</td>
                   <td className="px-6 py-4 text-sm text-gray-500">{asset ? `${asset.name} (${asset.serial || asset.type})` : '—'}</td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                      ticket.status === 'open' ? 'bg-green-100 text-green-800' :
-                      ticket.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>{ticket.status}</span>
+                    <span className={`inline-flex px-2 py-1 text-xs rounded-full ${ticket.status === 'open' ? 'bg-green-100 text-green-800' : ticket.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{ticket.status}</span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900">{ticket.priority}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 text-sm space-x-2">
+                    {canEdit(ticket) && <button onClick={() => openEdit(ticket)} className="text-indigo-600 hover:text-indigo-800">Edit</button>}
                     <button onClick={() => deleteMutation.mutate(ticket.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
                   </td>
                 </tr>

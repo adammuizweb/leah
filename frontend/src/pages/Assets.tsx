@@ -3,15 +3,19 @@ import { api, type Asset } from '../services/api'
 import { useState } from 'react'
 import Modal from '../components/Modal'
 import { useToast } from '../components/Toast'
+import { useAuth } from '../services/auth'
 
 export default function Assets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState<number | ''>('')
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
+  const [status, setStatus] = useState('active')
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -33,13 +37,17 @@ export default function Assets() {
   const catMap = new Map(categories?.map(c => [c.id, c.name]) || [])
   const filteredCats = typeId ? categories?.filter(c => c.type_id === typeId) : []
 
+  const canEdit = (a: Asset) => user?.is_superuser || user?.role === 'admin' || a.created_by === user?.id
+
   const createMutation = useMutation({
     mutationFn: (data: Partial<Asset>) => api.assets.create(data),
-    onSuccess: () => {
-      toast('Asset created', 'success')
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      setShowForm(false); setName(''); setTypeId(''); setCategoryId(''); setSerial('')
-    },
+    onSuccess: () => { toast('Asset created', 'success'); queryClient.invalidateQueries({ queryKey: ['assets'] }); resetForm() },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: (d: Partial<Asset>) => api.assets.update(editId!, d),
+    onSuccess: () => { toast('Asset updated', 'success'); queryClient.invalidateQueries({ queryKey: ['assets'] }); resetForm() },
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
@@ -49,10 +57,16 @@ export default function Assets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
+  function resetForm() { setShowForm(false); setEditId(null); setName(''); setTypeId(''); setCategoryId(''); setSerial(''); setStatus('active') }
+  function openEdit(a: Asset) {
+    setEditId(a.id); setName(a.name); setTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setSerial(a.serial || ''); setStatus(a.status); setShowForm(true)
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedType = assetTypes?.find(t => t.id === typeId)
-    createMutation.mutate({ name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial } as Partial<Asset>)
+    const body = { name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial, status } as Partial<Asset>
+    editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
 
   const assets = result?.data || []
@@ -62,10 +76,10 @@ export default function Assets() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assets</h1>
-        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">{showForm ? 'Cancel' : 'New Asset'}</button>
+        {!showForm && <button onClick={() => { resetForm(); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">+ New Asset</button>}
       </div>
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="New Asset">
+      <Modal open={showForm} onClose={resetForm} title={editId ? 'Edit Asset' : 'New Asset'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Name" required />
           <input value={serial} onChange={e => setSerial(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Serial number" />
@@ -77,9 +91,15 @@ export default function Assets() {
             <option value="">— No category —</option>
             {filteredCats?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          <select value={status} onChange={e => setStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="retired">Retired</option>
+          </select>
           <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Create</button>
+            <button type="button" onClick={resetForm} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{editId ? 'Update' : 'Create'}</button>
           </div>
         </form>
       </Modal>
@@ -122,8 +142,9 @@ export default function Assets() {
                 <td className="px-6 py-4">
                   <span className={`inline-flex px-2 py-1 text-xs rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{asset.status}</span>
                 </td>
-                <td className="px-6 py-4">
-                  <button onClick={() => deleteMutation.mutate(asset.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                <td className="px-6 py-4 text-sm space-x-2">
+                  {canEdit(asset) && <button onClick={() => openEdit(asset)} className="text-indigo-600 hover:text-indigo-800">Edit</button>}
+                  <button onClick={() => deleteMutation.mutate(asset.id)} className="text-red-600 hover:text-red-800">Delete</button>
                 </td>
               </tr>
             ))}
