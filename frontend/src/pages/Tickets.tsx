@@ -8,6 +8,7 @@ export default function Tickets() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assetId, setAssetId] = useState<number | ''>('')
+  const [assetError, setAssetError] = useState(false)
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -29,6 +30,7 @@ export default function Tickets() {
       setTitle('')
       setDescription('')
       setAssetId('')
+      setAssetError(false)
     },
   })
 
@@ -39,10 +41,12 @@ export default function Tickets() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!assetId) { setAssetError(true); return }
+    setAssetError(false)
     createMutation.mutate({
       title,
       description,
-      asset_id: assetId || null,
+      asset_id: assetId,
     } as Partial<Ticket>)
   }
 
@@ -63,8 +67,20 @@ export default function Tickets() {
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2" required />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Related Asset <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={assetId}
+              onChange={e => { setAssetId(e.target.value ? Number(e.target.value) : ''); setAssetError(false) }}
+              className={`w-full border rounded-lg px-3 py-2 ${assetError ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'}`}
+            >
+              <option value="">— Select asset —</option>
+              {assets?.map(a => (
+                <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>
+              ))}
+            </select>
+            {assetError && <p className="text-xs text-red-500 mt-1">Asset is required</p>}
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
