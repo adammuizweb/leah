@@ -59,11 +59,12 @@ WHERE r.name = 'user'
   AND p.name IN ('tickets.create', 'tickets.read.own')
 ON CONFLICT DO NOTHING;
 
--- Superuser (mutlak bypass all permissions)
--- Password harus di-generate ulang via bcrypt, jangan copy dari sini
--- INSERT INTO users (email, name, password_hash, role_id, is_superuser)
--- VALUES ('az@adammuiz.com', 'Adam Muiz', '<bcrypt-hash>', (SELECT id FROM roles WHERE name = 'admin'), true)
--- ON CONFLICT (email) DO UPDATE SET is_superuser = true;
+-- Demo superuser (mutlak bypass all permissions)
+-- password: leah — for development only
+INSERT INTO users (email, name, password_hash, role_id, is_superuser)
+SELECT 'superuser@leah.lan', 'Superuser', '$2b$12$I.NY04zy0/7HoIII.mUfzuhckWoKK4VsYBBOtOr6atm47gbCNMkfy', r.id, true
+FROM roles r WHERE r.name = 'admin'
+ON CONFLICT (email) DO UPDATE SET is_superuser = true, password_hash = EXCLUDED.password_hash;
 
 -- Test users (password for all: leah) — DEV ONLY
 -- Generated with bcrypt, cost=12, salt auto
