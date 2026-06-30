@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LEAH - Deployment Guide</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.7;
+      color: #1f2937;
+      background: #f8fafc;
+      padding: 2rem;
+    }
+    .container { max-width: 880px; margin: 0 auto; }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #4f46e5;
+      margin-bottom: 0.3rem;
+    }
+    .subtitle { color: #64748b; font-size: 1.05rem; margin-bottom: 2.5rem; }
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 3px solid #e2e8f0;
+    }
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 1.5rem;
+      margin-bottom: 0.6rem;
+    }
+    h4 { font-size: 1rem; font-weight: 600; color: #475569; margin-top: 1rem; margin-bottom: 0.4rem; }
+    p { margin-bottom: 1rem; color: #475569; }
+    ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; color: #475569; }
+    li { margin-bottom: 0.4rem; }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 1rem 1.2rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+    code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    p code, li code { background: #e2e8f0; padding: 0.15rem 0.4rem; border-radius: 4px; color: #1e293b; }
+    .box {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .box h3 { margin-top: 0; }
+    .tag {
+      display: inline-block;
+      background: #eef2ff;
+      color: #4f46e5;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      margin-right: 0.3rem;
+    }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .compare div {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.2rem;
+    }
+    .compare h4 { margin-top: 0; }
+    .compare .old { border-left: 4px solid #ef4444; }
+    .compare .new { border-left: 4px solid #22c55e; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>🚀 LEAH — Deployment Guide</h1>
+  <p class="subtitle">Dari kode di laptop sampai jalan di production</p>
+
+  <div class="box" style="background:#fef2f2;border-color:#fecaca;">
+    <p style="color:#991b1b;margin:0;"><strong>Prasyarat:</strong> Dokumen ini asumsinya kamu sudah familiar dengan <strong>PHP native deployment</strong> (copy file → setting nginx → done). Kita akan bandingkan dengan Go supaya kamu paham perbedaannya.</p>
+  </div>
+
+  <!-- ===== BAGIAN 1: PERBEDAAN DASAR ===== -->
+  <h2>1. Filosofi: PHP vs Go</h2>
+
+  <div class="compare">
+    <div class="old">
+      <h4>🐘 PHP Native (Jyavani CMS)</h4>
+      <p><strong>Interpreter</strong> — setiap request, PHP-FPM baca file .php, interpretasi, jalanin.</p>
+      <p><strong>Runtime di server:</strong> PHP-FPM harus terinstall, file .php harus ada di disk.</p>
+      <p><strong>Update:</strong> ganti file .php di server, langsung kebaca.</p>
+      <p><strong>Dependency:</strong> 0 (kamu pure native).</p>
+    </div>
+    <div class="new">
+      <h4>🐹 Go (LEAH)</h4>
+      <p><strong>Compiled</strong> — kode Go di-compile jadi satu file binary (file executable).</p>
+      <p><strong>Runtime di server:</strong> <strong>Nol.</strong> Gak perlu install Go di server. Cuma perlu 1 file binary.</p>
+      <p><strong>Update:</strong> compile ulang → matikan binary lama → jalankan binary baru.</p>
+      <p><strong>Dependency:</strong> Semua library Go sudah "tertanam" di dalam binary. <strong>Satu file = seluruh aplikasi.</strong></p>
+    </div>
+  </div>
+
+  <h3>Ilustrasi Perbedaan</h3>
+
+  <pre>
+PHP Native:
+  Server:
+    - Install PHP 8.4 + FPM
+    - Install MariaDB
+    - Copy semua file .php ke /var/www/leah/
+    - Konfigurasi Nginx → proxy ke PHP-FPM
+    - ✅ Selesai
+
+  Setiap ada request:
+    Nginx → PHP-FPM → baca file .php → jalanin → balikin HTML
+
+Go:
+  Server:
+    - Install Go (CUMA UNTUK BUILD — bisa di laptop kamu sendiri)
+    - Build → hasilnya 1 file: "leah"
+    - Copy file "leah" ke server
+    - Jalankan "./leah" (langsung jadi web server sendiri)
+    - Konfigurasi Nginx → proxy ke "leah" (di port 8080)
+    - ✅ Selesai
+
+  Setiap ada request:
+    Nginx → "leah" (binary yang sudah jalan) → balikin JSON
+  </pre>
+
+  <p><strong>Intinya:</strong> PHP butuh interpreter di server. Go gak butuh apa-apa — <strong>binary-nya sudah mengandung semua yang dibutuhkan</strong> (termasuk web server).</p>
+
+  <!-- ===== BAGIAN 2: DEPLOYMENT 2 VARIAN ===== -->
+  <h2>2. Dua Cara Deploy LEAH</h2>
+
+  <p>Ada 2 cara, kamu pilih sesuai selera:</p>
+
+  <h3>Cara A: Binary Langsung (Go murni, tanpa Docker)</h3>
+  <p>Ini yang paling simpel. <strong>Cocok buat kamu.</strong></p>
+
+  <pre>
+  +---------------------------+
+  | LAPTOP / DEV              |
+  |                           |
+  |   go build -o leah ./cmd  |
+  |       ↓                   |
+  |   Hasil: file "leah"      |
+  |   (ukuran ~20MB)          |
+  +---------------------------+
+            ↓ scp / rsync
+  +---------------------------+
+  | VM PRODUCTION             |
+  |                           |
+  |   ./leah &                |
+  |   (jalan sebagai proses)  |
+  |                           |
+  |   Nginx → reverse proxy   |
+  |   ke localhost:8080       |
+  +---------------------------+
+  </pre>
+
+  <h3>Cara B: Docker (Container)</h3>
+  <p>Ini yang <code>docker-compose.yml</code> yang aku buat sebelumnya. Semua service (backend, frontend, database) jalan di container.</p>
+
+  <pre>
+  +---------------------------+
+  | VM PRODUCTION             |
+  |                           |
+  |   docker compose up -d    |
+  |       ↓                   |
+  |   Container: postgres     |
+  |   Container: backend      |
+  |   Container: frontend     |
+  |                           |
+  |   Nginx → reverse proxy   |
+  |   ke container frontend   |
+  +---------------------------+
+  </pre>
+
+  <p><strong>Untuk kamu, aku saranin Cara A (binary langsung).</strong> Kenapa?</p>
+  <ul>
+    <li>Gak perlu install Docker</li>
+    <li>Satu file binary — gampang di-copy, gampang di backup</li>
+    <li>Minimal dependency — sesuai filosofimu</li>
+    <li>Lebih gampang di-pahami karena transparan</li>
+  </ul>
+
+  <!-- ===== BAGIAN 3: FRESH VM SETUP ===== -->
+  <h2>3. Setup Fresh VM — Panduan Langkah demi Langkah</h2>
+
+  <p>Anggap kamu punya VM baru (Debian/Ubuntu). Berikut step-by-step untuk deploy LEAH.</p>
+
+  <h3>3.1 Install Prasyarat</h3>
+
+  <pre>
+# ===== 1. Update system =====
+sudo apt update && sudo apt upgrade -y
+
+# ===== 2. Install Nginx (web server) =====
+sudo apt install nginx -y
+
+# ===== 3. Install PostgreSQL =====
+sudo apt install postgresql postgresql-contrib -y
+
+# ===== 4. Install Go (CUMA UNTUK BUILD) =====
+# Download & install Go
+wget https://go.dev/dl/go1.22.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.22.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
+source ~/.profile
+go version  # → should show go1.22
+  </pre>
+
+  <div class="box" style="background:#fffbeb;border-color:#fde68a;">
+    <p style="margin:0;"><strong>Catatan penting:</strong> Go hanya untuk <strong>build</strong>. Setelah binary jadi, Go bisa di-uninstall. Server production gak butuh Go.</p>
+  </div>
+
+  <h3>3.2 Build Binary</h3>
+
+  <pre>
+# ===== Di server production (atau di laptop, lalu di-copy) =====
+
+# Clone kode
+git clone https://github.com/adammuiz/leah.git /var/www/leah.lan
+cd /var/www/leah.lan/backend
+
+# Download dependency Go (hanya sekali)
+go mod download
+
+# Build binary
+# Hasilnya: satu file bernama "leah" di folder yang sama
+go build -o leah ./cmd/api
+
+# Cek ukuran — sekitar 20MB
+ls -lh leah
+# -rwxr-xr-x 1 adam adam 20M Jun 30 10:00 leah
+  </pre>
+
+  <h3>3.3 Setup Database</h3>
+
+  <pre>
+# ===== Setup PostgreSQL =====
+sudo -u postgres psql
+
+  -- Buat user database
+  CREATE USER leah WITH PASSWORD 'password-kuat-di-sini';
+
+  -- Buat database
+  CREATE DATABASE leah OWNER leah;
+
+  -- Keluar
+  \q
+
+# ===== Import skema database =====
+sudo -u postgres psql -d leah -f /var/www/leah.lan/backend/migrations/001_init.sql
+  </pre>
+
+  <h3>3.4 Siapkan Systemd Service (biar auto-restart)</h3>
+
+  <p>Systemd memastikan binary LEAH jalan otomatis saat VM restart, dan restart otomatis kalau crash.</p>
+
+  <pre>
+# ===== Buat file service =====
+sudo nano /etc/systemd/system/leah.service
+  </pre>
+
+  <p>Isinya:</p>
+
+  <pre>[Unit]
+Description=LEAH - List Everything Assets & Helpdesk
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=adam
+WorkingDirectory=/var/www/leah.lan/backend
+ExecStart=/var/www/leah.lan/backend/leah
+Restart=always
+RestartSec=5
+Environment=DATABASE_URL=postgres://leah:password-kuat-di-sini@localhost:5432/leah?sslmode=disable
+Environment=JWT_SECRET=rahasia-jwt-yang-kuat
+Environment=PORT=8080
+
+[Install]
+WantedBy=multi-user.target
+  </pre>
+
+  <pre>
+# ===== Aktifkan service =====
+sudo systemctl daemon-reload
+sudo systemctl enable leah
+sudo systemctl start leah
+
+# ===== Cek status =====
+sudo systemctl status leah
+# → "active (running)" ✅
+
+# ===== Cek log =====
+sudo journalctl -u leah -f
+  </pre>
+
+  <h3>3.5 Setup Nginx Reverse Proxy</h3>
+
+  <pre>
+# ===== Buat konfigurasi Nginx =====
+sudo nano /etc/nginx/sites-available/leah.lan
+  </pre>
+
+  <p>Isinya:</p>
+
+  <pre>server {
+    listen 80;
+    server_name leah.lan;  # Ganti dengan domain kamu
+
+    # ===== Frontend (React) — file statis =====
+    root /var/www/leah.lan/frontend/dist;
+    index index.html;
+
+    # ===== API backend — proxy ke Go =====
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ===== Fallback: semua request → index.html (buat React routing) =====
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+  </pre>
+
+  <pre>
+# ===== Aktifkan site =====
+sudo ln -s /etc/nginx/sites-available/leah.lan /etc/nginx/sites-enabled/
+sudo nginx -t       # test config
+sudo systemctl reload nginx
+  </pre>
+
+  <h3>3.6 Build Frontend untuk Production</h3>
+
+  <p>React perlu di-build jadi file statis (HTML, CSS, JS) — bukan dijalankan sebagai dev server.</p>
+
+  <pre>
+# ===== Install Node.js (cuma untuk build) =====
+# Sama seperti Go — Node.js hanya perlu saat build, setelah itu bisa dihapus
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# ===== Build frontend =====
+cd /var/www/leah.lan/frontend
+npm install
+npm run build
+
+# Hasilnya ada di folder: frontend/dist/
+# Ini file statis — bisa di-serve langsung oleh Nginx
+
+# Cek hasil
+ls dist/
+# index.html  assets/
+  </pre>
+
+  <p><strong>Setelah build selesai, Node.js bisa di-uninstall</strong> — server production hanya butuh file statis di <code>frontend/dist/</code>.</p>
+
+  <!-- ===== BAGIAN 4: UPDATE ===== -->
+  <h2>4. Cara Update LEAH</h2>
+
+  <p>Salah satu kenyamanan PHP native: tinggal replace file .php, selesai. Di Go, ada beberapa langkah ekstra tapi masih simpel:</p>
+
+  <pre>
+# ===== Setiap kali mau update LEAH ke versi baru =====
+
+# 1. Pull kode terbaru
+cd /var/www/leah.lan
+git pull origin main
+
+# 2. Build ulang binary Go
+cd /var/www/leah.lan/backend
+go build -o leah ./cmd/api
+
+# 3. Build ulang frontend (kalau ada perubahan)
+cd /var/www/leah.lan/frontend
+npm install
+npm run build
+
+# 4. Restart service
+sudo systemctl restart leah
+
+# 5. (Opsional) Kalau ada migrasi database baru
+sudo -u postgres psql -d leah -f /var/www/leah.lan/backend/migrations/002_nama_file.sql
+
+# ✅ Selesai — total ~30 detik
+  </pre>
+
+  <div class="box">
+    <h3>Perbandingan: Update PHP vs Go</h3>
+    <pre>
+PHP Native:
+  1. git pull
+  2. ✅ Selesai (file .php langsung jalan)
+
+Go:
+  1. git pull
+  2. go build (3-5 detik)
+  3. systemctl restart leah (< 1 detik)
+  4. ✅ Selesai
+
+Perbedaan: Go perlu langkah "build" + "restart".
+Tapi kompensasinya: performa jauh lebih cepat, memory lebih hemat.
+    </pre>
+  </div>
+
+  <!-- ===== BAGIAN 5: PERBANDINGAN KEBUTUHAN VM ===== -->
+  <h2>5. Perbandingan: PHP Native vs Go LEAH</h2>
+
+  <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;">
+    <tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0;">
+      <th style="text-align:left;padding:0.6rem;">Kebutuhan</th>
+      <th style="text-align:left;padding:0.6rem;">🐘 PHP Native</th>
+      <th style="text-align:left;padding:0.6rem;">🐹 Go LEAH</th>
+    </tr>
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <td style="padding:0.6rem;"><strong>Runtime di server</strong></td>
+      <td style="padding:0.6rem;">PHP 8.4 + PHP-FPM</td>
+      <td style="padding:0.6rem;">❌ <strong>Tidak perlu</strong> (binary sudah mandiri)</td>
+    </tr>
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <td style="padding:0.6rem;"><strong>Web server</strong></td>
+      <td style="padding:0.6rem;">Nginx (wajib)</td>
+      <td style="padding:0.6rem;">Nginx (opsional — sebagai reverse proxy / SSL)</td>
+    </tr>
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <td style="padding:0.6rem;"><strong>Database</strong></td>
+      <td style="padding:0.6rem;">MariaDB / MySQL</td>
+      <td style="padding:0.6rem;">PostgreSQL</td>
+    </tr>
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <td style="padding:0.6rem;"><strong>File di server</strong></td>
+      <td style="padding:0.6rem;">Ratusan file .php + .css + .js</td>
+      <td style="padding:0.6rem;">1 binary + folder dist/ (static files)</td>
+    </tr>
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <td style="padding:0.6rem;"><strong>Dev tools di production</strong></td>
+      <td style="padding:0.6rem;">Tidak perlu</td>
+      <td style="padding:0.6rem;">Tidak perlu (build di CI/local, kirim binary)</td>
+    </tr>
+    <tr>
+      <td style="padding:0.6rem;"><strong>Total dependency</strong></td>
+      <td style="padding:0.6rem;">PHP-FPM + MariaDB + Nginx</td>
+      <td style="padding:0.6rem;">PostgreSQL + Nginx</td>
+    </tr>
+  </table>
+
+  <!-- ===== BAGIAN 6: WORKFLOW LENGKAP ===== -->
+  <h2>6. Workflow Development → Production (Keseluruhan)</h2>
+
+  <pre>
+LAPTOP/DEV
+│
+├── 1. Edit kode (backend Go + frontend React)
+│
+├── 2. Build backend:
+│      cd backend && go build -o leah ./cmd/api
+│      → Hasil: file "leah"
+│
+├── 3. Build frontend:
+│      cd frontend && npm run build
+│      → Hasil: folder "dist/"
+│
+├── 4. Kirim ke server:
+│      rsync -avz backend/leah user@server:/var/www/leah.lan/backend/
+│      rsync -avz frontend/dist/ user@server:/var/www/leah.lan/frontend/dist/
+│
+└── 5. Restart di server:
+       ssh user@server "sudo systemctl restart leah"
+
+─── ATAU (lebih modern) ───
+
+CI/CD (GitHub Actions)
+│
+├── 1. Push ke GitHub
+├── 2. GitHub Actions otomatis:
+│      - Build Go binary
+│      - Build React frontend
+│      - Kirim ke server via SSH/SCP
+│      - Restart service
+└── 3. ✅ Selesai (tinggal nunggu 1-2 menit)
+  </pre>
+
+  <!-- ===== BAGIAN 7: RINGKASAN ===== -->
+  <h2>7. Ringkasan — Apa yang Perlu Diinstall di Fresh VM</h2>
+
+  <div class="box" style="background:#f0fdf4;border-color:#bbf7d0;">
+    <p style="margin-bottom:0.5rem;color:#166534;"><strong>✅ Yang WAJIB di install:</strong></p>
+    <ul>
+      <li><strong>Nginx</strong> — web server + reverse proxy + SSL</li>
+      <li><strong>PostgreSQL</strong> — database</li>
+    </ul>
+    <p style="margin-bottom:0.5rem;margin-top:1rem;color:#166534;"><strong>✅ Yang CUMA untuk build (bisa dihapus setelahnya):</strong></p>
+    <ul>
+      <li><strong>Go</strong> — compile backend jadi binary</li>
+      <li><strong>Node.js + npm</strong> — build frontend React jadi file statis</li>
+    </ul>
+    <p style="margin-bottom:0;margin-top:1rem;color:#166534;"><strong>❌ Yang TIDAK perlu:</strong></p>
+    <ul>
+      <li>PHP — <strong>tidak perlu sama sekali</strong></li>
+      <li>Docker — opsional, kalau mau cara alternatif</li>
+      <li>Composer — tidak ada</li>
+    </ul>
+  </div>
+
+  <h3>Perbandingan Akhir — Perintah Install</h3>
+
+  <pre>
+🐘 PHP Native (biasa):
+  apt install nginx php8.4 php8.4-fpm php8.4-mysql mariadb-server
+  → 5 package
+
+🐹 Go LEAH:
+  apt install nginx postgresql
+  → 2 package (Go & Node.js hanya untuk build, tidak untuk runtime)
+  </pre>
+
+  <!-- ===== BAGIAN 8: QUIZ ===== -->
+  <h2>8. Cek Pemahaman — Benar atau Salah?</h2>
+
+  <ol>
+    <li>"Production server harus install Go" — <strong>SALAH</strong>. Go hanya untuk build, binary sudah mandiri.</li>
+    <li>"Go binary ukurannya besar karena mengandung semua dependency" — <strong>BENAR</strong>. Tapi ini justru kelebihan: gak perlu install dependency di server.</li>
+    <li>"Kalau ada bug, cukup ganti file .php seperti biasa" — <strong>SALAH</strong>. Di Go, harus compile ulang binary dan restart service.</li>
+    <li>"LEAH butuh PHP-FPM" — <strong>SALAH</strong>. Go punya web server sendiri.</li>
+    <li>"Nginx tetap diperlukan" — <strong>TERGANTUNG</strong>. Untuk production, iya (buat SSL, static files, security). Untuk development di laptop, gak perlu.</li>
+    <li>"Node.js harus selalu jalan di server" — <strong>SALAH</strong>. Node.js cuma untuk build React. Hasil build adalah file HTML/CSS/JS statis.</li>
+  </ol>
+
+  <hr style="border:none;border-top:2px solid #e2e8f0;margin:2.5rem 0;">
+
+  <p style="text-align:center;color:#94a3b8;">🐱 LEAH — Deployment simpel, seperti yang kamu mau.</p>
+
+</div>
+</body>
+</html>
