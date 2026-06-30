@@ -11,11 +11,13 @@ import (
 )
 
 type Claims struct {
-	UserID      int64    `json:"user_id"`
-	Email       string   `json:"email"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"perms"`
-	IsSuperuser bool     `json:"is_superuser"`
+	UserID         int64    `json:"user_id"`
+	Email          string   `json:"email"`
+	Role           string   `json:"role"`
+	Permissions    []string `json:"perms"`
+	IsSuperuser    bool     `json:"is_superuser"`
+	OrganizationID int64    `json:"organization_id"`
+	OrgPath        string   `json:"org_path"`
 	jwt.RegisteredClaims
 }
 
@@ -58,12 +60,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		secret = "change-me-in-production"
 	}
 
+	orgID := int64(0)
+	orgPath := "/"
+	if user.OrganizationID != nil {
+		orgID = *user.OrganizationID
+	}
+
 	claims := Claims{
-		UserID:      user.ID,
-		Email:       user.Email,
-		Role:        user.Role,
-		Permissions: permNames,
-		IsSuperuser: user.IsSuperuser,
+		UserID:         user.ID,
+		Email:          user.Email,
+		Role:           user.Role,
+		Permissions:    permNames,
+		IsSuperuser:    user.IsSuperuser,
+		OrganizationID: orgID,
+		OrgPath:        orgPath,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

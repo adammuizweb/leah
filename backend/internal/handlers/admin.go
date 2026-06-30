@@ -97,82 +97,50 @@ func (h *Handler) SoftDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	roles, err := h.svc.ListRoles(r.Context())
-	if err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, roles)
 }
 
 func (h *Handler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var ro models.Role
-	if err := decodeJSON(r, &ro); err != nil {
-		respond(w, 400, map[string]string{"error": "invalid request body"})
-		return
-	}
-	if err := h.svc.CreateRole(r.Context(), &ro); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err := decodeJSON(r, &ro); err != nil { respond(w, 400, map[string]string{"error": "invalid body"}); return }
+	if err := h.svc.CreateRole(r.Context(), &ro); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 201, ro)
 }
 
 func (h *Handler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var ro models.Role
-	if err := decodeJSON(r, &ro); err != nil {
-		respond(w, 400, map[string]string{"error": "invalid request body"})
-		return
-	}
+	if err := decodeJSON(r, &ro); err != nil { respond(w, 400, map[string]string{"error": "invalid body"}); return }
 	ro.ID = id
-	if err := h.svc.UpdateRole(r.Context(), &ro); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err := h.svc.UpdateRole(r.Context(), &ro); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, ro)
 }
 
 func (h *Handler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err := h.svc.DeleteRole(r.Context(), id); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err := h.svc.DeleteRole(r.Context(), id); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 204, nil)
 }
 
 func (h *Handler) GetRolePermissions(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	perms, err := h.svc.GetRolePermissions(r.Context(), id)
-	if err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, perms)
 }
 
 func (h *Handler) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	var req struct {
-		PermissionIDs []int64 `json:"permission_ids"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		respond(w, 400, map[string]string{"error": "invalid request body"})
-		return
-	}
-	if err := h.svc.SetRolePermissions(r.Context(), id, req.PermissionIDs); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	var req struct { PermissionIDs []int64 `json:"permission_ids"` }
+	if err := decodeJSON(r, &req); err != nil { respond(w, 400, map[string]string{"error": "invalid body"}); return }
+	if err := h.svc.SetRolePermissions(r.Context(), id, req.PermissionIDs); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) ListAllPermissions(w http.ResponseWriter, r *http.Request) {
 	perms, err := h.svc.ListAllPermissions(r.Context())
-	if err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, perms)
 }
 
@@ -180,34 +148,42 @@ func (h *Handler) ListAllPermissions(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListBin(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.ListBin(r.Context())
-	if err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, items)
 }
 
 func (h *Handler) RestoreItem(w http.ResponseWriter, r *http.Request) {
 	typ := chi.URLParam(r, "type")
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err := h.svc.RestoreItem(r.Context(), typ, id); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err := h.svc.RestoreItem(r.Context(), typ, id); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 200, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) PermanentlyDelete(w http.ResponseWriter, r *http.Request) {
 	typ := chi.URLParam(r, "type")
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err := h.svc.PermanentlyDelete(r.Context(), typ, id); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
+	if err := h.svc.PermanentlyDelete(r.Context(), typ, id); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
 	respond(w, 204, nil)
 }
 
-// ─── Self password change (user ganti password sendiri) ─────────
+func (h *Handler) ListHoldings(w http.ResponseWriter, r *http.Request) {
+	hh, err := h.svc.ListHoldings(r.Context())
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
+	respond(w, 200, hh)
+}
+
+func (h *Handler) CreateHolding(w http.ResponseWriter, r *http.Request) {
+	var hh models.Holding
+	if err := decodeJSON(r, &hh); err != nil { respond(w, 400, map[string]string{"error": "invalid body"}); return }
+	if err := h.svc.CreateHolding(r.Context(), &hh); err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
+	respond(w, 201, hh)
+}
+
+func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	oo, err := h.svc.ListOrganizations(r.Context())
+	if err != nil { respond(w, 500, map[string]string{"error": err.Error()}); return }
+	respond(w, 200, oo)
+}
 
 func (h *Handler) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.CtxKeyUserID).(int64)

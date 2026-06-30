@@ -71,6 +71,16 @@ WHERE r.name = 'user'
   AND p.name IN ('tickets.create', 'tickets.read.own')
 ON CONFLICT DO NOTHING;
 
+-- Default holding & organization (scope root)
+INSERT INTO holdings (name, slug) VALUES ('Default', 'default') ON CONFLICT (slug) DO NOTHING;
+INSERT INTO organizations (name, holding_id, path, level)
+SELECT 'Default', id, '/' || id || '/', 0 FROM holdings WHERE slug = 'default'
+AND NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'Default' AND holding_id = (SELECT id FROM holdings WHERE slug = 'default'));
+
+-- Assign all users to default org
+UPDATE users SET organization_id = (SELECT id FROM organizations WHERE name = 'Default')
+WHERE organization_id IS NULL AND EXISTS (SELECT 1 FROM organizations WHERE name = 'Default');
+
 -- Demo superuser (mutlak bypass all permissions)
 -- password: leah — for development only
 INSERT INTO users (email, name, password_hash, role_id, is_superuser)

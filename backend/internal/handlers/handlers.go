@@ -27,6 +27,12 @@ func userIDFromCtx(r *http.Request) int64 {
 	return id
 }
 
+func orgIDFromCtx(r *http.Request) *int64 {
+	id, _ := r.Context().Value(middleware.CtxKeyOrgID).(int64)
+	if id == 0 { return nil }
+	return &id
+}
+
 func int64Ptr(n int64) *int64 { return &n }
 
 func decodeJSON(r *http.Request, v any) error {
@@ -74,6 +80,7 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.CreatedBy = userIDFromCtx(r)
+	t.OrganizationID = orgIDFromCtx(r)
 	if err := h.svc.CreateTicket(r.Context(), &t); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -152,6 +159,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.CreatedBy = int64Ptr(userIDFromCtx(r))
+	a.OrganizationID = orgIDFromCtx(r)
 	if err := h.svc.CreateAsset(r.Context(), &a); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return

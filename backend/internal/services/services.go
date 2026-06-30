@@ -107,3 +107,6 @@ func (s *Service) ListAssetCategories(ctx context.Context) ([]models.AssetCatego
 func (s *Service) CreateAssetCategory(ctx context.Context, c *models.AssetCategory) error   { return s.repo.CreateAssetCategory(ctx, c) }
 func (s *Service) UpdateAssetCategory(ctx context.Context, c *models.AssetCategory) error      { return s.repo.UpdateAssetCategory(ctx, c) }
 func (s *Service) DeleteAssetCategory(ctx context.Context, id int64) error                    { return s.repo.DeleteAssetCategory(ctx, id) }
+func (s *Service) ListHoldings(ctx context.Context) ([]models.Holding, error)                 { return s.repo.ListHoldings(ctx) }
+func (s *Service) CreateHolding(ctx context.Context, h *models.Holding) error                 { return s.repo.CreateHolding(ctx, h) }
+func (s *Service) ListOrganizations(ctx context.Context) ([]models.Organization, error)        { return s.repo.ListOrganizations(ctx) }

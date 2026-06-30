@@ -68,6 +68,16 @@ PUT    /api/assets/:id
 DELETE /api/assets/:id
 ```
 
+## Scope & Multi-Tenant
+
+LEAH support **holding → organization** hierarchy. Setiap data (user, asset, ticket)
+terikat ke `organization_id`. Scope otomatis di-filter berdasarkan path organization user.
+
+- `holdings` — perusahaan/entitas level atas
+- `organizations` — hierarki bertingkat dengan parent_id, path, level
+- Middleware scope filter di setiap query (kecuali superadmin)
+- Backup DB sebelum migration besar: `pg_dump leah > /tmp/leah-$(date +%Y%m%d).sql`
+
 ## Development Credentials
 
 Semua seed users password: `leah`

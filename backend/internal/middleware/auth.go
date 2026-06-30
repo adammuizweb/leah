@@ -11,11 +11,13 @@ import (
 type ctxKey string
 
 const (
-	CtxKeyUserID      ctxKey = "user_id"
-	CtxKeyUserEmail   ctxKey = "user_email"
-	CtxKeyUserRole    ctxKey = "user_role"
-	CtxKeyPermissions ctxKey = "permissions"
-	CtxKeyIsSuperuser ctxKey = "is_superuser"
+	CtxKeyUserID         ctxKey = "user_id"
+	CtxKeyUserEmail      ctxKey = "user_email"
+	CtxKeyUserRole       ctxKey = "user_role"
+	CtxKeyPermissions    ctxKey = "permissions"
+	CtxKeyIsSuperuser    ctxKey = "is_superuser"
+	CtxKeyOrgID          ctxKey = "organization_id"
+	CtxKeyOrgPath        ctxKey = "org_path"
 )
 
 func Auth(secret string) func(http.Handler) http.Handler {
@@ -54,6 +56,8 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			email, _ := claims["email"].(string)
 			role, _ := claims["role"].(string)
 			isSuper, _ := claims["is_superuser"].(bool)
+			orgID, _ := claims["organization_id"].(float64)
+			orgPath, _ := claims["org_path"].(string)
 
 			var perms []string
 			if rawPerms, ok := claims["perms"].([]any); ok {
@@ -69,6 +73,8 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, CtxKeyUserRole, role)
 			ctx = context.WithValue(ctx, CtxKeyPermissions, perms)
 			ctx = context.WithValue(ctx, CtxKeyIsSuperuser, isSuper)
+			ctx = context.WithValue(ctx, CtxKeyOrgID, int64(orgID))
+			ctx = context.WithValue(ctx, CtxKeyOrgPath, orgPath)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

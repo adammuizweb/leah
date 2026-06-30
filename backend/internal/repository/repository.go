@@ -15,7 +15,7 @@ func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, created_at, updated_at`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, created_at, updated_at`
 
 type TicketFilter struct {
 	Search   string
@@ -88,8 +88,8 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 
 func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -131,7 +131,7 @@ func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
 
 // ─── Assets ─────────────────────────────────────────────────────
 
-const assetCols = `id, name, type, type_id, category_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, created_at, updated_at`
+const assetCols = `id, name, type, type_id, category_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
 
 type AssetFilter struct {
 	Search  string
@@ -183,7 +183,7 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 	assets := make([]models.Asset, 0)
 	for rows.Next() {
 		var a models.Asset
-		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -195,8 +195,8 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 
 func (r *Repository) CreateAsset(ctx context.Context, a *models.Asset) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO assets (name, type, type_id, category_id, serial, status, location, assigned_to, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at, updated_at`,
-		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy,
+		`INSERT INTO assets (name, type, type_id, category_id, serial, status, location, assigned_to, created_by, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, created_at, updated_at`,
+		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy, a.OrganizationID,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
@@ -204,7 +204,7 @@ func (r *Repository) GetAsset(ctx context.Context, id int64) (*models.Asset, err
 	a := &models.Asset{}
 	err := r.db.QueryRow(ctx,
 		`SELECT `+assetCols+` FROM assets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.CreatedAt, &a.UpdatedAt)
+	).Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("asset not found")
 	}
@@ -213,8 +213,8 @@ func (r *Repository) GetAsset(ctx context.Context, id int64) (*models.Asset, err
 
 func (r *Repository) UpdateAsset(ctx context.Context, a *models.Asset, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE assets SET name=$1, type=$2, type_id=$3, category_id=$4, serial=$5, status=$6, location=$7, assigned_to=$8, updated_at=NOW(), updated_by=$9 WHERE id=$10 AND deleted_at IS NULL`,
-		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, userID, a.ID,
+		`UPDATE assets SET name=$1, type=$2, type_id=$3, category_id=$4, serial=$5, status=$6, location=$7, assigned_to=$8, organization_id=$9, updated_at=NOW(), updated_by=$10 WHERE id=$11 AND deleted_at IS NULL`,
+		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, a.OrganizationID, userID, a.ID,
 	)
 	if err != nil {
 		return err
@@ -241,9 +241,9 @@ func (r *Repository) DeleteAsset(ctx context.Context, id, userID int64) error {
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	u := &models.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id = u.role_id WHERE u.email=$1`, email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -253,9 +253,9 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.
 func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id = u.role_id WHERE u.id=$1`, id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -286,7 +286,7 @@ func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]mo
 
 func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id=u.role_id ORDER BY u.created_at DESC`,
 	)
 	if err != nil {
@@ -296,7 +296,7 @@ func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	users := make([]models.User, 0)
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.CreatedAt, &u.DeletedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -650,6 +650,36 @@ func (r *Repository) UpdateAssetCategory(ctx context.Context, c *models.AssetCat
 		c.Name, c.ParentID, c.TypeID, c.ID,
 	)
 	return err
+}
+
+func (r *Repository) ListHoldings(ctx context.Context) ([]models.Holding, error) {
+	rows, err := r.db.Query(ctx, `SELECT id, name, slug, created_at FROM holdings ORDER BY name`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	hh := make([]models.Holding, 0)
+	for rows.Next() {
+		var h models.Holding
+		if err := rows.Scan(&h.ID, &h.Name, &h.Slug, &h.CreatedAt); err != nil { return nil, err }
+		hh = append(hh, h)
+	}
+	return hh, nil
+}
+
+func (r *Repository) CreateHolding(ctx context.Context, h *models.Holding) error {
+	return r.db.QueryRow(ctx, `INSERT INTO holdings (name, slug) VALUES ($1,$2) RETURNING id, created_at`, h.Name, h.Slug).Scan(&h.ID, &h.CreatedAt)
+}
+
+func (r *Repository) ListOrganizations(ctx context.Context) ([]models.Organization, error) {
+	rows, err := r.db.Query(ctx, `SELECT id, name, parent_id, holding_id, path, level, created_at FROM organizations ORDER BY path`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	oo := make([]models.Organization, 0)
+	for rows.Next() {
+		var o models.Organization
+		if err := rows.Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.CreatedAt); err != nil { return nil, err }
+		oo = append(oo, o)
+	}
+	return oo, nil
 }
 
 func (r *Repository) DeleteAssetCategory(ctx context.Context, id int64) error {
