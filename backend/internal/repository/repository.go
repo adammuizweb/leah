@@ -76,7 +76,7 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	tickets := make([]models.Ticket, 0)
 	for rows.Next() {
 		var t models.Ticket
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -97,7 +97,7 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 	t := &models.Ticket{}
 	err := r.db.QueryRow(ctx,
 		`SELECT `+ticketCols+` FROM tickets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found")
 	}
@@ -106,8 +106,8 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 
 func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, updated_at=NOW(), updated_by=$7 WHERE id=$8 AND deleted_at IS NULL`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, userID, t.ID,
+		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, organization_id=$7, updated_at=NOW(), updated_by=$8 WHERE id=$9 AND deleted_at IS NULL`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, userID, t.ID,
 	)
 	if err != nil {
 		return err

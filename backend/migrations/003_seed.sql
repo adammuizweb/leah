@@ -2,6 +2,7 @@
 
 -- Default roles
 INSERT INTO roles (name, label, is_admin) VALUES
+    ('superadmin', 'Superadmin', FALSE),
     ('admin', 'Administrator', TRUE),
     ('agent', 'Agent', FALSE),
     ('user', 'User', FALSE)
@@ -44,6 +45,13 @@ INSERT INTO permissions (name, label, module, action) VALUES
     ('settings.update', 'Update settings', 'settings', 'update')
 ON CONFLICT (name) DO NOTHING;
 
+-- Superadmin — ALL permissions including settings.*
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM roles r, permissions p
+WHERE r.name = 'superadmin'
+ON CONFLICT DO NOTHING;
+
 -- Admin — all content permissions (NOT settings.* — only superuser bypasses)
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
@@ -80,6 +88,12 @@ AND NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'Default' AND holding_i
 -- Assign all users to default org
 UPDATE users SET organization_id = (SELECT id FROM organizations WHERE name = 'Default')
 WHERE organization_id IS NULL AND EXISTS (SELECT 1 FROM organizations WHERE name = 'Default');
+
+-- Demo superadmin user (all permissions including settings)
+INSERT INTO users (email, name, password_hash, role_id)
+SELECT 'superadmin@leah.lan', 'Superadmin', '$2b$12$I.NY04zy0/7HoIII.mUfzuhckWoKK4VsYBBOtOr6atm47gbCNMkfy', r.id
+FROM roles r WHERE r.name = 'superadmin'
+ON CONFLICT (email) DO UPDATE SET role_id = EXCLUDED.role_id;
 
 -- Demo superuser (mutlak bypass all permissions)
 -- password: leah — for development only

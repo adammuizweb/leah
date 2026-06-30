@@ -71,21 +71,27 @@ Satu binary Go yang bisa di-copy ke server mana pun. Tidak perlu runtime depende
     date: '2026-06-28',
     body: `LEAH memiliki sistem permission granular yang bisa dikonfigurasi.
 
-## Hierarki
+## Hierarki (dari tertinggi)
 
-- **Superuser** — bypass semua permission, bisa manage roles
-- **Admin role** — bypass content permissions (tickets, assets, users)
-- **Regular role** — harus punya permission explicit
+1. **Superuser** — flag is_superuser=true di tabel users. Bypass ALL permission checks. Hanya bisa di-set langsung di database.
+2. **Superadmin** — role dengan ALL permissions termasuk settings.*. Bisa manage roles & permissions lewat UI.
+3. **Admin** — bypass content permissions (tickets, assets, users). Tidak bisa settings.* atau Bin.
+4. **Agent/Editor** — permission explicit. Cuma bisa edit dalam scope organisasinya.
+5. **User** — cuma bisa create ticket dan lihat ticket sendiri.
+
+## Permission Matrix
+
+| Modul | Superuser | Superadmin | Admin | Agent | User |
+|-------|-----------|------------|-------|-------|------|
+| tickets | ✅ bypass | ✅ all | ✅ bypass | ✅ explicit | create only |
+| assets | ✅ bypass | ✅ all | ✅ bypass | ✅ explicit | ❌ |
+| users | ✅ bypass | ✅ all | ✅ bypass | ❌ | ❌ |
+| settings.* | ✅ bypass | ✅ all | ❌ 403 | ❌ | ❌ |
+| Bin | ✅ bypass | ✅ all | ❌ 403 | ❌ | ❌ |
 
 ## Permission Management
 
-Setiap modul memiliki permission CRUD terpisah:
-
-- tickets.create, tickets.read, tickets.update, tickets.delete
-- assets.create, assets.read, assets.update, assets.delete
-- types.*, categories.*, users.*, settings.*
-
-Permission bisa diatur lewat Admin → Permissions (superuser only).`,
+Setiap modul memiliki permission CRUD terpisah. Bisa diatur lewat Admin → Permissions oleh Superadmin atau Superuser.`,
   },
 }
 
