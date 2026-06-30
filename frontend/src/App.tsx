@@ -2,6 +2,9 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './services/auth'
 import { ToastProvider } from './components/Toast'
 import Landing from './pages/Landing'
+import About from './pages/About'
+import Blog from './pages/Blog'
+import BlogPost from './pages/BlogPost'
 import AppShell from './pages/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -33,6 +36,9 @@ function App() {
       <ToastProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/login" element={<Login />} />
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

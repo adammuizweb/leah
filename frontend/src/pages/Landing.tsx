@@ -51,9 +51,9 @@ export default function Landing() {
           <div className="flex justify-between items-center h-16">
             <Link to="/" className="text-xl font-bold text-indigo-600 tracking-tight">LEAH</Link>
             <div className="flex items-center gap-4 sm:gap-6">
-              <Link to="/dashboard" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Dashboard</Link>
-              <Link to="/tickets" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Tickets</Link>
-              <Link to="/assets" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Assets</Link>
+              <Link to="/about" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">About</Link>
+              <Link to="/blog" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">Blog</Link>
+              <a href="https://github.com/adammuizweb/leah" target="_blank" className="text-sm text-gray-600 hover:text-indigo-600 font-medium">GitHub</a>
               <Link to="/dashboard" className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium">
                 Get Started
               </Link>
@@ -89,7 +89,7 @@ export default function Landing() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
               </Link>
               <a
-                href="https://github.com/adammuiz/leah"
+                href="https://github.com/adammuizweb/leah"
                 target="_blank"
                 className="inline-flex items-center gap-2 border border-gray-300 text-gray-700 px-6 py-3 rounded-lg text-base font-medium hover:bg-gray-50 transition-colors"
               >
