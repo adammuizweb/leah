@@ -43,11 +43,14 @@ function saveState(token: string | null, user: User | null, permissions: string[
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>(loadState)
+  const [state, setState] = useState<AuthState>(() => {
+    const s = loadState()
+    api.setToken(s.token)  // set token BEFORE first render
+    return s
+  })
 
   useEffect(() => {
     saveState(state.token, state.user, state.permissions)
-    api.setToken(state.token)
   }, [state.token, state.user, state.permissions])
 
   const login = async (email: string, password: string) => {
