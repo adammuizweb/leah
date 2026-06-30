@@ -54,22 +54,23 @@ func main() {
 		// Auth — protected
 		r.Group(func(r chi.Router) {
 			r.Use(leahmw.Auth(cfg.JWTSecret))
+
 			r.Get("/auth/me", h.Me)
 
 			r.Route("/tickets", func(r chi.Router) {
-				r.Get("/", h.ListTickets)
-				r.Post("/", h.CreateTicket)
-				r.Get("/{id}", h.GetTicket)
-				r.Put("/{id}", h.UpdateTicket)
-				r.Delete("/{id}", h.DeleteTicket)
+				r.With(leahmw.RequirePermission("tickets.read")).Get("/", h.ListTickets)
+				r.With(leahmw.RequirePermission("tickets.create")).Post("/", h.CreateTicket)
+				r.With(leahmw.RequirePermission("tickets.read")).Get("/{id}", h.GetTicket)
+				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}", h.UpdateTicket)
+				r.With(leahmw.RequirePermission("tickets.delete")).Delete("/{id}", h.DeleteTicket)
 			})
 
 			r.Route("/assets", func(r chi.Router) {
-				r.Get("/", h.ListAssets)
-				r.Post("/", h.CreateAsset)
-				r.Get("/{id}", h.GetAsset)
-				r.Put("/{id}", h.UpdateAsset)
-				r.Delete("/{id}", h.DeleteAsset)
+				r.With(leahmw.RequirePermission("assets.read")).Get("/", h.ListAssets)
+				r.With(leahmw.RequirePermission("assets.create")).Post("/", h.CreateAsset)
+				r.With(leahmw.RequirePermission("assets.read")).Get("/{id}", h.GetAsset)
+				r.With(leahmw.RequirePermission("assets.update")).Put("/{id}", h.UpdateAsset)
+				r.With(leahmw.RequirePermission("assets.delete")).Delete("/{id}", h.DeleteAsset)
 			})
 		})
 	})

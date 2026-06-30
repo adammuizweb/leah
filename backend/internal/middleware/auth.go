@@ -53,9 +53,20 @@ func Auth(secret string) func(http.Handler) http.Handler {
 			email, _ := claims["email"].(string)
 			role, _ := claims["role"].(string)
 
+			// Extract permissions from claims — stored as []any, convert to []string
+			var perms []string
+			if rawPerms, ok := claims["perms"].([]any); ok {
+				for _, p := range rawPerms {
+					if s, ok := p.(string); ok {
+						perms = append(perms, s)
+					}
+				}
+			}
+
 			ctx := context.WithValue(r.Context(), CtxKeyUserID, userID)
 			ctx = context.WithValue(ctx, CtxKeyUserEmail, email)
 			ctx = context.WithValue(ctx, CtxKeyUserRole, role)
+			ctx = context.WithValue(ctx, CtxKeyPermissions, perms)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -66,9 +77,8 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			perms, _ := r.Context().Value(CtxKeyPermissions).([]string)
-
-			// Admin bypass
 			role, _ := r.Context().Value(CtxKeyUserRole).(string)
+
 			if role == "admin" {
 				next.ServeHTTP(w, r)
 				return

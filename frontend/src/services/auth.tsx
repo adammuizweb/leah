@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const res = await api.login(email, password)
     const perms = res.permissions || []
+    api.setToken(res.token)  // set BEFORE navigate
     setState({ token: res.token, user: res.user, permissions: perms })
   }
 
