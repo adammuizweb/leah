@@ -7,10 +7,16 @@ export default function Tickets() {
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [assetId, setAssetId] = useState<number | ''>('')
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
     queryFn: api.tickets.list,
+  })
+
+  const { data: assets } = useQuery({
+    queryKey: ['assets'],
+    queryFn: api.assets.list,
   })
 
   const createMutation = useMutation({
@@ -20,6 +26,7 @@ export default function Tickets() {
       setShowForm(false)
       setTitle('')
       setDescription('')
+      setAssetId('')
     },
   })
 
@@ -30,7 +37,11 @@ export default function Tickets() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    createMutation.mutate({ title, description, created_by: 1 })
+    createMutation.mutate({
+      title,
+      description,
+      asset_id: assetId || null,
+    } as Partial<Ticket>)
   }
 
   if (isLoading) return <div className="text-gray-500">Loading...</div>
@@ -67,6 +78,19 @@ export default function Tickets() {
               rows={3}
             />
           </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Related Asset</label>
+            <select
+              value={assetId}
+              onChange={e => setAssetId(e.target.value ? Number(e.target.value) : '')}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+            >
+              <option value="">— No asset —</option>
+              {assets?.map(a => (
+                <option key={a.id} value={a.id}>{a.name} ({a.serial || a.type})</option>
+              ))}
+            </select>
+          </div>
           <button
             type="submit"
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
@@ -82,6 +106,7 @@ export default function Tickets() {
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -92,6 +117,9 @@ export default function Tickets() {
               <tr key={ticket.id}>
                 <td className="px-6 py-4 text-sm text-gray-900">#{ticket.id}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">{ticket.title}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {ticket.asset_id ? `#${ticket.asset_id}` : '—'}
+                </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
                     ticket.status === 'open' ? 'bg-green-100 text-green-800' :

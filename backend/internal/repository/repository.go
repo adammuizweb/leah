@@ -15,8 +15,10 @@ func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 // ─── Tickets ────────────────────────────────────────────────────
 
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, created_at, updated_at`
+
 func (r *Repository) ListTickets(ctx context.Context) ([]models.Ticket, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, title, description, status, priority, assigned_to, created_by, created_at, updated_at FROM tickets WHERE deleted_at IS NULL ORDER BY created_at DESC`)
+	rows, err := r.db.Query(ctx, `SELECT `+ticketCols+` FROM tickets WHERE deleted_at IS NULL ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +26,7 @@ func (r *Repository) ListTickets(ctx context.Context) ([]models.Ticket, error) {
 	tickets := make([]models.Ticket, 0)
 	for rows.Next() {
 		var t models.Ticket
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -34,26 +36,26 @@ func (r *Repository) ListTickets(ctx context.Context) ([]models.Ticket, error) {
 
 func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
 func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, error) {
 	t := &models.Ticket{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, title, description, status, priority, assigned_to, created_by, created_at, updated_at FROM tickets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+		`SELECT `+ticketCols+` FROM tickets WHERE id=$1 AND deleted_at IS NULL`, id,
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found")
 	}
 	return t, nil
 }
 
-func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket) error {
+func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, updated_at=NOW() WHERE id=$6 AND deleted_at IS NULL`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.ID,
+		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, updated_at=NOW(), updated_by=$7 WHERE id=$8 AND deleted_at IS NULL`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, userID, t.ID,
 	)
 	if err != nil {
 		return err
@@ -64,8 +66,8 @@ func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket) error {
 	return nil
 }
 
-func (r *Repository) DeleteTicket(ctx context.Context, id int64) error {
-	tag, err := r.db.Exec(ctx, `UPDATE tickets SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
+func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
+	tag, err := r.db.Exec(ctx, `UPDATE tickets SET deleted_at=NOW(), deleted_by=$1 WHERE id=$2 AND deleted_at IS NULL`, userID, id)
 	if err != nil {
 		return err
 	}
@@ -77,8 +79,10 @@ func (r *Repository) DeleteTicket(ctx context.Context, id int64) error {
 
 // ─── Assets ─────────────────────────────────────────────────────
 
+const assetCols = `id, name, type, serial, status, location, assigned_to, created_by, updated_by, deleted_by, created_at, updated_at`
+
 func (r *Repository) ListAssets(ctx context.Context) ([]models.Asset, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, name, type, serial, status, location, assigned_to, created_at, updated_at FROM assets WHERE deleted_at IS NULL ORDER BY name`)
+	rows, err := r.db.Query(ctx, `SELECT `+assetCols+` FROM assets WHERE deleted_at IS NULL ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +90,7 @@ func (r *Repository) ListAssets(ctx context.Context) ([]models.Asset, error) {
 	assets := make([]models.Asset, 0)
 	for rows.Next() {
 		var a models.Asset
-		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -96,26 +100,26 @@ func (r *Repository) ListAssets(ctx context.Context) ([]models.Asset, error) {
 
 func (r *Repository) CreateAsset(ctx context.Context, a *models.Asset) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO assets (name, type, serial, status, location, assigned_to) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at, updated_at`,
-		a.Name, a.Type, a.Serial, a.Status, a.Location, a.AssignedTo,
+		`INSERT INTO assets (name, type, serial, status, location, assigned_to, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at, updated_at`,
+		a.Name, a.Type, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
 func (r *Repository) GetAsset(ctx context.Context, id int64) (*models.Asset, error) {
 	a := &models.Asset{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, name, type, serial, status, location, assigned_to, created_at, updated_at FROM assets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&a.ID, &a.Name, &a.Type, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedAt, &a.UpdatedAt)
+		`SELECT `+assetCols+` FROM assets WHERE id=$1 AND deleted_at IS NULL`, id,
+	).Scan(&a.ID, &a.Name, &a.Type, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("asset not found")
 	}
 	return a, nil
 }
 
-func (r *Repository) UpdateAsset(ctx context.Context, a *models.Asset) error {
+func (r *Repository) UpdateAsset(ctx context.Context, a *models.Asset, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE assets SET name=$1, type=$2, serial=$3, status=$4, location=$5, assigned_to=$6, updated_at=NOW() WHERE id=$7 AND deleted_at IS NULL`,
-		a.Name, a.Type, a.Serial, a.Status, a.Location, a.AssignedTo, a.ID,
+		`UPDATE assets SET name=$1, type=$2, serial=$3, status=$4, location=$5, assigned_to=$6, updated_at=NOW(), updated_by=$7 WHERE id=$8 AND deleted_at IS NULL`,
+		a.Name, a.Type, a.Serial, a.Status, a.Location, a.AssignedTo, userID, a.ID,
 	)
 	if err != nil {
 		return err
@@ -126,8 +130,8 @@ func (r *Repository) UpdateAsset(ctx context.Context, a *models.Asset) error {
 	return nil
 }
 
-func (r *Repository) DeleteAsset(ctx context.Context, id int64) error {
-	tag, err := r.db.Exec(ctx, `UPDATE assets SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
+func (r *Repository) DeleteAsset(ctx context.Context, id, userID int64) error {
+	tag, err := r.db.Exec(ctx, `UPDATE assets SET deleted_at=NOW(), deleted_by=$1 WHERE id=$2 AND deleted_at IS NULL`, userID, id)
 	if err != nil {
 		return err
 	}

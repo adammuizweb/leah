@@ -37,8 +37,12 @@ export interface Ticket {
   priority: string
   assigned_to: number | null
   created_by: number
+  updated_by?: number | null
+  deleted_by?: number | null
+  asset_id?: number | null
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
 export interface Role {
@@ -71,8 +75,12 @@ export interface Asset {
   status: string
   location: string
   assigned_to: number | null
+  created_by?: number | null
+  updated_by?: number | null
+  deleted_by?: number | null
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
 interface LoginResponse {

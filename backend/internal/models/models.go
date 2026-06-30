@@ -10,6 +10,9 @@ type Ticket struct {
 	Priority    string     `json:"priority"`
 	AssignedTo  *int64     `json:"assigned_to"`
 	CreatedBy   int64      `json:"created_by"`
+	UpdatedBy   *int64     `json:"updated_by,omitempty"`
+	DeletedBy   *int64     `json:"deleted_by,omitempty"`
+	AssetID     *int64     `json:"asset_id,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
@@ -23,6 +26,9 @@ type Asset struct {
 	Status      string     `json:"status"`
 	Location    string     `json:"location"`
 	AssignedTo  *int64     `json:"assigned_to"`
+	CreatedBy   *int64     `json:"created_by,omitempty"`
+	UpdatedBy   *int64     `json:"updated_by,omitempty"`
+	DeletedBy   *int64     `json:"deleted_by,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at,omitempty"`

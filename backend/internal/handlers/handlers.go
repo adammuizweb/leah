@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/adammuiz/leah/internal/middleware"
 	"github.com/adammuiz/leah/internal/models"
 	"github.com/adammuiz/leah/internal/services"
 )
@@ -19,6 +20,13 @@ type Handler struct {
 func New(svc *services.Service, jwtSecret string) *Handler {
 	return &Handler{svc: svc, jwtSecret: jwtSecret}
 }
+
+func userIDFromCtx(r *http.Request) int64 {
+	id, _ := r.Context().Value(middleware.CtxKeyUserID).(int64)
+	return id
+}
+
+func int64Ptr(n int64) *int64 { return &n }
 
 func decodeJSON(r *http.Request, v any) error {
 	if r.Body == nil {
@@ -48,6 +56,7 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid request body"})
 		return
 	}
+	t.CreatedBy = userIDFromCtx(r)
 	if err := h.svc.CreateTicket(r.Context(), &t); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -81,7 +90,7 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.ID = id
-	if err := h.svc.UpdateTicket(r.Context(), &t); err != nil {
+	if err := h.svc.UpdateTicket(r.Context(), &t, userIDFromCtx(r)); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
@@ -94,7 +103,7 @@ func (h *Handler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid id"})
 		return
 	}
-	if err := h.svc.DeleteTicket(r.Context(), id); err != nil {
+	if err := h.svc.DeleteTicket(r.Context(), id, userIDFromCtx(r)); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
@@ -116,6 +125,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid request body"})
 		return
 	}
+	a.CreatedBy = int64Ptr(userIDFromCtx(r))
 	if err := h.svc.CreateAsset(r.Context(), &a); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -149,7 +159,7 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.ID = id
-	if err := h.svc.UpdateAsset(r.Context(), &a); err != nil {
+	if err := h.svc.UpdateAsset(r.Context(), &a, userIDFromCtx(r)); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
@@ -162,7 +172,7 @@ func (h *Handler) DeleteAsset(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid id"})
 		return
 	}
-	if err := h.svc.DeleteAsset(r.Context(), id); err != nil {
+	if err := h.svc.DeleteAsset(r.Context(), id, userIDFromCtx(r)); err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
 	}

@@ -27,11 +27,11 @@ func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 func (s *Service) GetTicket(ctx context.Context, id int64) (*models.Ticket, error) {
 	return s.repo.GetTicket(ctx, id)
 }
-func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket) error {
-	return s.repo.UpdateTicket(ctx, t)
+func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
+	return s.repo.UpdateTicket(ctx, t, userID)
 }
-func (s *Service) DeleteTicket(ctx context.Context, id int64) error {
-	return s.repo.DeleteTicket(ctx, id)
+func (s *Service) DeleteTicket(ctx context.Context, id, userID int64) error {
+	return s.repo.DeleteTicket(ctx, id, userID)
 }
 
 func (s *Service) ListAssets(ctx context.Context) ([]models.Asset, error) {
@@ -46,11 +46,11 @@ func (s *Service) CreateAsset(ctx context.Context, a *models.Asset) error {
 func (s *Service) GetAsset(ctx context.Context, id int64) (*models.Asset, error) {
 	return s.repo.GetAsset(ctx, id)
 }
-func (s *Service) UpdateAsset(ctx context.Context, a *models.Asset) error {
-	return s.repo.UpdateAsset(ctx, a)
+func (s *Service) UpdateAsset(ctx context.Context, a *models.Asset, userID int64) error {
+	return s.repo.UpdateAsset(ctx, a, userID)
 }
-func (s *Service) DeleteAsset(ctx context.Context, id int64) error {
-	return s.repo.DeleteAsset(ctx, id)
+func (s *Service) DeleteAsset(ctx context.Context, id, userID int64) error {
+	return s.repo.DeleteAsset(ctx, id, userID)
 }
 
 func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
