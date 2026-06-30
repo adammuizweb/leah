@@ -78,3 +78,7 @@ terikat ke `organization_id`. Scope otomatis di-filter berdasarkan path organiza
 - Middleware scope filter di setiap query (kecuali superadmin)
 - Backup DB sebelum migration besar: `pg_dump leah > /tmp/leah-$(date +%Y%m%d).sql`
 
+## Credentials
+
+Kredensial ada di `journals/auth.md` (lokal, di .gitignore).
+
