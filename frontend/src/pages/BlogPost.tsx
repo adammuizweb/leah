@@ -40,7 +40,7 @@ Akses di http://localhost:8080. Login dengan superuser@leah.lan / leah.`,
   },
   'architecture-overview': {
     title: 'Architecture Overview',
-    date: '2026-06-29',
+    date: '2026-06-30',
     body: `LEAH menggunakan arsitektur 3-tier: frontend React, backend Go API, database PostgreSQL.
 
 ## Layer
@@ -50,21 +50,71 @@ Browser → Nginx → /api/* → Go API → PostgreSQL
                → /* → index.html (React SPA)
 \`\`\`
 
-## Backend
+## Backend (Go)
 
-Backend Go menggunakan pola Handler → Service → Repository:
+Pola Handler → Service → Repository:
 
-- **Handler**: menerima HTTP request, parse JSON, kirim response
-- **Service**: logic bisnis, validasi
-- **Repository**: SQL query ke database
+- **Handler** — menerima HTTP request, parse JSON, kirim response JSON
+- **Service** — logic bisnis, validasi data
+- **Repository** — SQL query ke database (PostgreSQL via pgx)
 
-## Frontend
+Setiap endpoint diproteksi oleh dua middleware:
+1. **Auth** — validasi JWT token, ekstrak user + permissions
+2. **RequirePermission** — cek apakah user punya permission spesifik
 
-React SPA dengan Vite, TypeScript, Tailwind CSS, dan TanStack Query untuk data fetching.
+## Frontend (React)
+
+React SPA dengan Vite, TypeScript, Tailwind CSS, TanStack Query.
+
+Komponen reusable:
+- **Modal** — popup form
+- **ConfirmDialog** — konfirmasi aksi
+- **Toast** — notifikasi
+
+## Database (PostgreSQL)
+
+### Relasi Data
+
+\`\`\`
+holdings
+  └── organizations (hierarkis, parent_id + path + level)
+        ├── users.organization_id
+        ├── assets.organization_id
+        └── tickets.organization_id
+\`\`\`
+
+Setiap data terikat ke organization. Scope otomatis di-filter berdasarkan path organization user.
+
+### Soft Delete
+
+Semua data utama (tickets, assets, users, types, categories) menggunakan soft delete.
+Item yang dihapus masuk ke Bin dan bisa di-restore.
+
+## Role & Permission
+
+\`\`\`
+Superuser (is_superuser=true) — bypass ALL
+  └── Superadmin role — all permissions + settings
+        └── Admin role — bypass content (tickets, assets, users)
+              └── Agent role — explicit content permissions
+                    └── User role — create tickets only
+\`\`\`
+
+Permission granular per module-action (create, read, update, delete, bulk_delete, assign).
+
+## Scope (Multi-Tenant)
+
+LEAH mendukung hierarki Holding → Organization:
+
+- **Holding** — entitas level atas (Universitas, Hospital, Farming)
+- **Organization** — struktur bertingkat dalam holding, dengan parent_id dan materialized path
+
+User hanya bisa melihat data dalam scope organisasinya sendiri (dan children-nya).
+Superuser dan Superadmin bisa melihat semua.
 
 ## Deployment
 
-Satu binary Go yang bisa di-copy ke server mana pun. Tidak perlu runtime dependency.`,
+Satu binary Go (~20MB) tanpa runtime dependency. Nginx sebagai reverse proxy + serve static files.`,
   },
   'role-permissions': {
     title: 'Role & Permission System',
