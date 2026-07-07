@@ -10,6 +10,7 @@ const posts = [
   { slug: 'asset-management', title: 'Asset Management — Full Lifecycle', desc: 'Dari asset types, categories, models, hingga individual assets. CRUD, filter, search, bulk create, dan soft delete.', date: '2026-07-07' },
   { slug: 'soft-delete-bin', title: 'Soft Delete & Bin System — Data Recovery', desc: 'Bagaimana LEAH menangani penghapusan data: soft delete, restore, permanent delete, dan recovery workflow.', date: '2026-07-07' },
   { slug: 'user-management', title: 'User Management — CRUD, Roles & Multi-Org Access', desc: 'Membuat dan mengelola user, assignment role, multi-organisasi access, dan security best practices.', date: '2026-07-07' },
+  { slug: 'role-flows-guide', title: 'Role Flows Guide — Visual Tour of Permissions in Action', desc: 'Panduan visual lengkap dengan screenshots — bagaimana setiap role (Superuser, Superadmin, Admin, Agent, User) melihat dan berinteraksi dengan LEAH.', date: '2026-07-07' },
 ]
 
 export default function Blog() {

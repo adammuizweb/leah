@@ -8,6 +8,7 @@ import BlogPost from './pages/BlogPost'
 import AppShell from './pages/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Profile from './pages/Profile'
 import Tickets from './pages/Tickets'
 import TicketDetail from './pages/TicketDetail'
 import Assets from './pages/Assets'
@@ -49,6 +50,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />
           <Route path="/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
           <Route path="/assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />

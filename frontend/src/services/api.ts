@@ -26,6 +26,7 @@ export interface User {
   role: string
   role_id: number | null
   is_superuser?: boolean
+  avatar_url?: string | null
   organization_id?: number | null
   created_at: string
   deleted_at?: string | null
@@ -121,6 +122,13 @@ export interface PaginatedResult<T> {
   total_pages: number
 }
 
+export interface UserOrgDetail {
+  organization_id: number
+  org_name: string
+  holding_id: number
+  holding_name: string
+}
+
 export interface Holding {
   id: number
   name: string
@@ -173,6 +181,7 @@ export interface Asset {
   serial: string
   status: string
   location: string
+  organization_id?: number | null
   assigned_to: number | null
   created_by?: number | null
   updated_by?: number | null
@@ -201,6 +210,24 @@ export const api = {
 
   changePassword: (password: string) =>
     request<void>('/auth/password', { method: 'PUT', body: JSON.stringify({ password }) }),
+
+  updateProfile: (data: { name: string }) =>
+    request<User>('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
+
+  uploadAvatar: async (file: File) => {
+    const form = new FormData()
+    form.append('avatar', file)
+    const headers: Record<string, string> = {}
+    if (typeof _token === 'string') headers['Authorization'] = `Bearer ${_token}`
+    const res = await fetch('/api/auth/avatar', { method: 'POST', body: form, headers })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error)
+    }
+    return res.json() as Promise<{ avatar_url: string }>
+  },
+
+  getMyOrgs: () => request<UserOrgDetail[]>('/auth/organizations'),
 
   users: {
     list: () => request<User[]>('/users'),

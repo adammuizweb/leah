@@ -137,9 +137,17 @@ type User struct {
 	RoleID         *int64     `json:"role_id"`
 	Role           string     `json:"role"`
 	IsSuperuser    bool       `json:"is_superuser"`
+	AvatarURL      *string    `json:"avatar_url,omitempty"`
 	OrganizationID *int64     `json:"organization_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
+}
+
+type UserOrgDetail struct {
+	OrganizationID int64  `json:"organization_id"`
+	OrgName        string `json:"org_name"`
+	HoldingID      int64  `json:"holding_id"`
+	HoldingName    string `json:"holding_name"`
 }
 
 type Role struct {

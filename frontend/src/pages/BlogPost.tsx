@@ -810,121 +810,222 @@ Halaman Bin di **Admin → Bin** menampilkan daftar semua item yang dihapus deng
   'user-management': {
     title: 'User Management — CRUD, Roles & Multi-Org Access',
     date: '2026-07-07',
-    body: `LEAH memiliki sistem manajemen user yang terintegrasi dengan role-based access control (RBAC) dan multi-organisasi.
+    body: `LEAH User Management ...`,
+  },
+  'role-flows-guide': {
+    title: 'Role Flows Guide — Visual Tour of Permissions in Action',
+    date: '2026-07-07',
+    body: `Artikel ini adalah panduan visual yang menunjukkan bagaimana setiap role melihat dan berinteraksi dengan LEAH. Setiap role memiliki akses dan tampilan yang berbeda — dari **Superuser** yang bisa melihat semuanya, hingga **User** yang hanya bisa membuat ticket.
 
-## User CRUD
+Jika Anda belum membaca artikel konseptual tentang hierarki role, baca dulu [Role & Permission System](/blog/role-permissions) untuk memahami dasarnya.
 
-### Membuat User
+---
 
-Dari **Admin → Users**, klik **+ New User**:
+## 1. Superuser — Bypass Semua
 
-1. Masukkan **email** (login credential)
-2. Masukkan **nama** lengkap
-3. Masukkan **password** awal
-4. Pilih **role** — tentukan level akses
-5. Klik Create
+**Superuser** adalah akun tertinggi dengan flag \`is_superuser = true\` di database. Tidak ada pengecekan permission — semua endpoint bisa diakses.
 
-\`\`\`
-Pro tip: Password bisa diubah oleh admin kapan saja lewat Edit → Update Password.
-\`\`\`
+### Dashboard
 
-### Edit User
+Superuser melihat statistik lengkap: total tickets, open tickets, total assets, dan my tickets.
 
-Klik **Edit** pada user yang ingin diubah:
-- Ubah nama, email, role
-- Reset password
-- Atur akses organisasi
+![](/blog/role-roles/superuser-01-dashboard.png)
 
-### Hapus User
+### Tickets & Assets
 
-Klik **Delete** → user masuk ke soft delete (Bin). Bisa direstore jika diperlukan.
+Semua data dari semua organisasi tampil — tidak ada scope filter.
 
-\`\`\`warning
-User yang dihapus tidak bisa login. Ticket/asset yang di-assign ke user ini akan kehilangan reference.
-\`\`\`
+![](/blog/role-roles/superuser-02-tickets.png)
 
-## Role Assignment
+![](/blog/role-roles/superuser-03-assets.png)
 
-Role menentukan apa yang bisa dilakukan user:
+### Admin Panel — Full Access
 
-| Role | Level akses |
-|------|-------------|
-| **Superadmin** | Semua permission + settings |
-| **Admin** | Bypass content permissions (tickets, assets, users) |
-| **Agent** | Permission explicit — tergantung konfigurasi |
-| **User** | Create ticket + lihat ticket sendiri |
+Superuser bisa mengakses SEMUA halaman admin:
 
-### Cara Assign Role
+| Halaman | Akses |
+|---------|-------|
+| Users | ✅ Full CRUD |
+| Permissions | ✅ Manage roles & permissions |
+| Holdings | ✅ CRUD |
+| Organizations | ✅ CRUD |
+| Asset Types | ✅ CRUD |
+| Categories | ✅ CRUD |
+| Asset Models | ✅ CRUD |
+| Ticket Types | ✅ CRUD |
+| SLA Policies | ✅ CRUD |
+| Bin | ✅ Restore & permanent delete |
 
-1. Buka **Admin → Users**
-2. Klik **Edit** pada user
-3. Pilih role dari dropdown
-4. Save
+![](/blog/role-roles/superuser-04-admin.png)
 
-\`\`\`info
-Superuser (is_superuser=true) tidak bisa diubah lewat UI — hanya via database langsung.
-\`\`\`
+![](/blog/role-roles/superuser-05-admin-users.png)
 
-## Multi-Organization Access
+![](/blog/role-roles/superuser-06-admin-permissions.png)
 
-Seorang user bisa memiliki akses ke **lebih dari satu organisasi**. Ini penting untuk:
-- Supervisor yang mengawasi multiple unit
-- Teknisi yang bertugas di beberapa lokasi
-- Manager yang perlu melihat data beberapa departemen
+### Profile
 
-### Cara Memberikan Multi-Org Access
+Halaman profil menampilkan avatar, informasi user, organisasi, dan permissions.
 
-1. Buka **Admin → Users**
-2. Klik **Edit** pada user
-3. Tab **Organizations** — centang organisasi yang ingin diberikan akses
-4. Save
+![](/blog/role-roles/superuser-15-profile.png)
 
-User kemudian bisa melihat data dari semua organisasi yang di-assign, termasuk child organisasi (via materialized path).
+---
 
-### Scope Filter
+## 2. Superadmin — All Permissions via Role
 
-Setiap query di backend otomatis memfilter berdasarkan organisasi user:
+**Superadmin** memiliki semua permission secara eksplisit (termasuk \`settings.*\`) melalui role \`superadmin\`. Secara visual dan fungsional, hampir sama dengan Superuser — perbedaannya ada di level implementasi: Superuser bypass di level middleware, Superadmin via permission checking.
 
-\`\`\`go
-// Di repository
-if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
-  query += \` WHERE organization_id = ANY($1)\`
-  args = append(args, orgIDs)
-}
-\`\`\`
+### Dashboard & Admin
 
-User superuser (is_superuser=true) bypass semua scope filter.
+![](/blog/role-roles/superadmin-01-dashboard.png)
 
-## Permission Management
+Superadmin bisa mengakses semua halaman yang sama dengan Superuser, termasuk settings, holdings, organizations, dan bin.
 
-Permission diatur di **Admin → Permissions**:
+![](/blog/role-roles/superadmin-04-admin.png)
 
-1. Pilih role (superadmin, admin, agent, user)
-2. Centang permission yang ingin diberikan
-3. Save
+### Bin — Data Recovery
 
-Permission bersifat granular per module-action:
+Halaman Bin menampilkan semua item yang di-soft-delete, dengan opsi Restore atau Permanent Delete.
 
-| Module | Actions |
-|--------|---------|
-| tickets | create, read, update, delete, assign, comment, internal, bulk_delete |
-| assets | create, read, update, delete, assign, bulk_delete |
-| users | create, read, update, delete |
-| types | create, read, update, delete |
-| categories | create, read, update, delete |
-| models | create, read, update, delete |
-| ticket_types | create, read, update, delete |
-| sla_policies | create, read, update, delete |
-| settings | read, update |
+![](/blog/role-roles/superadmin-09-admin-bin.png)
 
-## Security Best Practices
+---
 
-1. **Superuser hanya untuk setup awal** — setelah itu gunakan superadmin/admin dengan scope terbatas
-2. **Jangan beri akses lebih dari yang diperlukan** — prinsip least privilege
-3. **Gunakan multi-org access dengan hati-hati** — hanya assign organisasi yang relevan
-4. **Audit trail** — setiap perubahan tercatat di database (created_by, updated_by, deleted_by)
-5. **Password strength** — gunakan password minimal 8 karakter dengan kombinasi huruf, angka, dan simbol
-6. **Nonaktifkan user yang sudah tidak aktif** — jangan langsung hapus, cukup soft delete`,
+## 3. Admin — Content Manager, No Settings
+
+**Admin** adalah role yang powerful untuk content management, tetapi dibatasi untuk \`settings.*\` permissions.
+
+**Akses Admin:**
+- Tickets, Assets, Users → Full CRUD (bypass permission check)
+- Asset Types, Categories, Models → Full CRUD
+- Ticket Types, SLA Policies → Full CRUD
+
+**Tidak bisa akses:**
+- Permissions/Roles → ❌ 403
+- Holdings → ❌ 403
+- Organizations → ❌ 403
+- Bin → ❌ 403
+
+### Dashboard & Tickets
+
+Admin melihat dashboard dan data yang sama dengan Superuser/Superadmin.
+
+![](/blog/role-roles/admin-01-dashboard.png)
+
+### Admin Panel — Sebagian Error
+
+Admin bisa membuka halaman Admin Index dan melihat semua link sidebar, tetapi ketika mengklik Permissions, Holdings, Organizations, atau Bin, API akan mengembalikan error 403.
+
+![](/blog/role-roles/admin-03-admin.png)
+
+Admin Users — bisa kelola user:
+
+![](/blog/role-roles/admin-04-admin-users.png)
+
+Admin Permissions — 403 error karena butuh \`settings.read\`:
+
+![](/blog/role-roles/admin-05-admin-permissions.png)
+
+### Content Management — Berfungsi Penuh
+
+Asset Types, Categories, Models, Ticket Types, SLA Policies — semua bisa diakses admin:
+
+![](/blog/role-roles/admin-06-admin-types.png)
+
+![](/blog/role-roles/admin-07-admin-categories.png)
+
+### Settings Error — Holdings, Organizations, Bin
+
+Halaman yang membutuhkan \`settings.read\` akan menampilkan error toast:
+
+![](/blog/role-roles/admin-11-admin-holdings.png)
+
+---
+
+## 4. Agent — Ticket & Asset Operations
+
+**Agent** memiliki permission eksplisit untuk mengelola ticket dan asset (tanpa delete).
+
+**Permissions Agent:**
+- \`tickets.create\`, \`tickets.read\`, \`tickets.update\`, \`tickets.assign\`
+- \`assets.create\`, \`assets.read\`, \`assets.update\`, \`assets.assign\`
+
+**Tidak bisa:**
+- Menghapus ticket atau asset
+- Mengakses halaman admin (redirect ke dashboard)
+- Mengelola user, settings, dll.
+
+### Dashboard
+
+![](/blog/role-roles/agent-01-dashboard.png)
+
+### Tickets & Assets
+
+Agent bisa membuat, melihat, dan mengupdate ticket dan asset.
+
+![](/blog/role-roles/agent-02-tickets.png)
+
+![](/blog/role-roles/agent-03-assets.png)
+
+### Admin — Redirect
+
+Ketika agent mencoba mengakses \`/admin\`, mereka di-redirect ke dashboard karena \`AdminRoute\` memeriksa \`role === 'admin' || role === 'superadmin' || is_superuser\`.
+
+---
+
+## 5. User — Minimal Access
+
+**User** adalah role paling terbatas. Hanya bisa membuat ticket dan melihat ticket miliknya sendiri.
+
+**Permissions User:**
+- \`tickets.create\`
+- \`tickets.read.own\`
+
+### Dashboard
+
+Dashboard user hanya menampilkan data yang relevan — total tickets (miliknya) dan my tickets.
+
+![](/blog/role-roles/user-01-dashboard.png)
+
+### Tickets — Own Only
+
+User hanya melihat ticket yang dibuatnya sendiri.
+
+![](/blog/role-roles/user-02-tickets.png)
+
+### Assets — Redirect
+
+User tidak punya \`assets.read\`, sehingga halaman Assets akan menampilkan error atau redirect ke login.
+
+### Admin — Redirect
+
+Sama seperti agent, user tidak bisa mengakses admin.
+
+---
+
+## Ringkasan Visual
+
+| Area | Superuser | Superadmin | Admin | Agent | User |
+|------|-----------|------------|-------|-------|------|
+| Dashboard | ✅ Full | ✅ Full | ✅ Full | ✅ Limited | ✅ Own |
+| Tickets | ✅ All | ✅ All | ✅ All | ✅ CRUD | ✅ Create + Own |
+| Assets | ✅ All | ✅ All | ✅ All | ✅ CRUD | ❌ |
+| Users CRUD | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Permissions | ✅ | ✅ | ❌ 403 | ❌ | ❌ |
+| Holdings/Orgs | ✅ | ✅ | ❌ 403 | ❌ | ❌ |
+| Bin | ✅ | ✅ | ❌ 403 | ❌ | ❌ |
+| Types/Categories | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Models | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Ticket Types | ✅ | ✅ | ✅ | ❌ | ❌ |
+| SLA Policies | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Profile | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## Best Practices
+
+1. **Gunakan Superuser hanya untuk setup awal** — setelah konfigurasi selesai, berikan akses via role Superadmin atau Admin.
+2. **Admin cocok untuk manajer TI** — mereka bisa manage content tanpa bisa mengubah setting sistem.
+3. **Agent untuk teknisi lapangan** — mereka perlu membuat dan mengupdate ticket/asset, tapi tidak perlu akses admin.
+4. **User untuk end-user** — cukup bisa melaporkan masalah via ticket.
+5. **Jangan berikan settings.* ke admin biasa** — pisahkan peran settings management ke role terpisah (Superadmin) untuk security.`,
   },
 }
 

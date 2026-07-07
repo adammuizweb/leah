@@ -5,29 +5,23 @@ import { useState } from 'react'
 import { useAuth } from '../services/auth'
 import { useToast } from '../components/Toast'
 import ConfirmDialog from '../components/ConfirmDialog'
-
-const STATUS_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-800',
-  open: 'bg-green-100 text-green-800',
-  in_progress: 'bg-blue-100 text-blue-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  resolved: 'bg-indigo-100 text-indigo-800',
-  closed: 'bg-gray-50 text-gray-400',
-  cancelled: 'bg-red-100 text-red-800',
-}
+import Modal from '../components/Modal'
+import Badge from '../components/Badge'
+import { DetailSkeleton } from '../components/LoadingSkeleton'
 
 const STATUS_LABELS: Record<string, string> = {
-  new: 'New',
-  open: 'Open',
-  in_progress: 'In Progress',
-  pending: 'Pending',
-  resolved: 'Resolved',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
+  new: 'New', open: 'Open', in_progress: 'In Progress', pending: 'Pending',
+  resolved: 'Resolved', closed: 'Closed', cancelled: 'Cancelled',
 }
 
-function statusBadge(status: string) {
-  return <span className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-800'}`}>{STATUS_LABELS[status] || status}</span>
+const validTransitions: Record<string, string[]> = {
+  new: ['open', 'cancelled'],
+  open: ['in_progress', 'cancelled'],
+  in_progress: ['pending', 'resolved'],
+  pending: ['in_progress', 'cancelled'],
+  resolved: ['closed', 'in_progress'],
+  closed: ['in_progress'],
+  cancelled: [],
 }
 
 export default function TicketDetail() {
@@ -66,17 +60,6 @@ export default function TicketDetail() {
 
   const typeMap = new Map(types?.map(t => [t.id, t]) || [])
 
-  // Valid transitions from journal 20
-  const validTransitions: Record<string, string[]> = {
-    new: ['open', 'cancelled'],
-    open: ['in_progress', 'cancelled'],
-    in_progress: ['pending', 'resolved'],
-    pending: ['in_progress', 'cancelled'],
-    resolved: ['closed', 'in_progress'],
-    closed: ['in_progress'],
-    cancelled: [],
-  }
-
   const statusMutation = useMutation({
     mutationFn: ({ status, note }: { status: string; note?: string }) =>
       api.tickets.updateStatus(Number(id), status, note),
@@ -105,60 +88,71 @@ export default function TicketDetail() {
 
   const deleteCommentMutation = useMutation({
     mutationFn: (cid: number) => api.tickets.comments.delete(Number(id), cid),
-    onSuccess: () => {
-      toast('Comment deleted', 'success')
-      queryClient.invalidateQueries({ queryKey: ['ticket-comments', id] })
-    },
+    onSuccess: () => { toast('Comment deleted', 'success'); queryClient.invalidateQueries({ queryKey: ['ticket-comments', id] }) },
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  if (isLoading) return <div className="text-center py-12 text-gray-500">Loading...</div>
-  if (!ticket) return <div className="text-center py-12 text-gray-500">Ticket not found</div>
+  if (isLoading) return <DetailSkeleton />
+  if (!ticket) return (
+    <div className="flex flex-col items-center justify-center py-24">
+      <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">Ticket not found</h2>
+      <p className="text-sm text-gray-500 mb-4">The ticket you're looking for doesn't exist or has been deleted.</p>
+      <Link to="/tickets" className="btn-primary">Back to Tickets</Link>
+    </div>
+  )
 
   const allowedTransitions = validTransitions[ticket.status] || []
 
-  return (
-    <div>
-      <div className="mb-4">
-        <Link to="/tickets" className="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Tickets</Link>
-      </div>
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow mb-6">
+  return (
+    <div className="animate-fade-in">
+      {/* Back link */}
+      <Link to="/tickets" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-brand-600 transition-colors mb-6">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+        Back to Tickets
+      </Link>
+
+      {/* Header card */}
+      <div className="card mb-6">
         <div className="p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-2xl font-bold text-gray-900">{ticket.title}</h1>
-                {statusBadge(ticket.status)}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3 flex-wrap mb-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">{ticket.title}</h1>
+                <Badge value={ticket.status} icon="dot" />
               </div>
-              <div className="text-sm text-gray-500">
-                #{ticket.id} &middot; Created {new Date(ticket.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              </div>
+              <p className="text-sm text-gray-500">
+                #{ticket.id} &middot; Created {formatDate(ticket.created_at)}
+              </p>
             </div>
             {canChangeStatus && allowedTransitions.length > 0 && (
-              <button onClick={() => setShowStatusModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Change Status</button>
+              <button onClick={() => setShowStatusModal(true)} className="btn-primary shrink-0">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                Change Status
+              </button>
             )}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
             <div>
-              <span className="text-gray-500">Priority</span>
-              <p className="font-medium text-gray-900 capitalize">{ticket.priority}</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Priority</p>
+              <Badge value={ticket.priority} />
             </div>
             <div>
-              <span className="text-gray-500">Type</span>
-              <p className="font-medium text-gray-900">{ticket.type_id ? (typeMap.get(ticket.type_id)?.name || '—') : '—'}</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Type</p>
+              <p className="text-sm font-medium text-gray-900">{ticket.type_id ? (typeMap.get(ticket.type_id)?.name || '—') : '—'}</p>
             </div>
             <div>
-              <span className="text-gray-500">Asset</span>
-              <p className="font-medium text-gray-900">{ticket.asset_id ? `#${ticket.asset_id}` : '—'}</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Asset</p>
+              <p className="text-sm font-medium text-gray-900">{ticket.asset_id ? `#${ticket.asset_id}` : '—'}</p>
             </div>
             {ticket.sla_resolve_at && (
               <div>
-                <span className="text-gray-500">SLA Resolve</span>
-                <p className={`font-medium ${new Date(ticket.sla_resolve_at) < new Date() ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(ticket.sla_resolve_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">SLA Deadline</p>
+                <p className={`text-sm font-medium ${new Date(ticket.sla_resolve_at) < new Date() ? 'text-red-600' : 'text-gray-900'}`}>
+                  {formatDate(ticket.sla_resolve_at)}
                 </p>
               </div>
             )}
@@ -167,109 +161,142 @@ export default function TicketDetail() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Description + Comments */}
+        {/* Left column: Description + Comments */}
         <div className="lg:col-span-2 space-y-6">
           {/* Description */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Description</h2>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{ticket.description || 'No description'}</p>
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-3">Description</h2>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {ticket.description || <span className="text-gray-400 italic">No description provided.</span>}
+            </div>
           </div>
 
           {/* Comments */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Comments</h2>
-
-            <div className="space-y-4 mb-6">
-              {comments?.length === 0 && <p className="text-sm text-gray-400">No comments yet.</p>}
-              {comments?.map(c => (
-                <div key={c.id} className={`p-3 rounded-lg text-sm ${c.is_internal ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
-                  <div className="flex justify-between items-start mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{c.user_name || c.user_email}</span>
-                      {c.is_internal && <span className="text-xs bg-orange-200 text-orange-800 px-1.5 py-0.5 rounded">Internal</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('id-ID', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                      {isAdmin && <button onClick={() => setDeleteCommentId(c.id)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>}
-                    </div>
-                  </div>
-                  <p className="text-gray-700 whitespace-pre-wrap">{c.content}</p>
-                </div>
-              ))}
+          <div className="card">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">Comments</h2>
             </div>
-
-            {/* Add comment */}
-            <form onSubmit={e => { e.preventDefault(); if (comment.trim()) commentMutation.mutate() }} className="space-y-3">
-              <textarea value={comment} onChange={e => setComment(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Type your comment..." rows={3} required />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <button type="submit" disabled={!comment.trim()} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">Send</button>
-                  {canInternal && (
-                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                      <input type="checkbox" checked={isInternal} onChange={e => setIsInternal(e.target.checked)} className="rounded" />
-                      Internal note
-                    </label>
-                  )}
-                </div>
+            <div className="p-6">
+              <div className="space-y-4 mb-6">
+                {!comments?.length ? (
+                  <p className="text-sm text-gray-400 text-center py-4">No comments yet. Be the first to respond.</p>
+                ) : (
+                  comments.map(c => (
+                    <div key={c.id} className={`rounded-lg p-4 text-sm ${c.is_internal ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50 border border-gray-100'}`}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 shrink-0">
+                            {(c.user_name || c.user_email || '?').charAt(0).toUpperCase()}
+                          </span>
+                          <span className="font-medium text-gray-900 text-sm">{c.user_name || c.user_email}</span>
+                          {c.is_internal && (
+                            <span className="badge bg-amber-100 text-amber-700 ring-1 ring-amber-600/20 text-[10px]">Internal</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-gray-400">{formatDate(c.created_at)}</span>
+                          {isAdmin && (
+                            <button onClick={() => setDeleteCommentId(c.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{c.content}</p>
+                    </div>
+                  ))
+                )}
               </div>
-            </form>
+
+              {/* Add comment */}
+              <form onSubmit={e => { e.preventDefault(); if (comment.trim()) commentMutation.mutate() }} className="space-y-3">
+                <textarea value={comment} onChange={e => setComment(e.target.value)} className="input" placeholder="Type your comment..." rows={3} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <button type="submit" disabled={!comment.trim() || commentMutation.isPending} className="btn-primary btn-sm">
+                      {commentMutation.isPending ? (
+                        <span className="flex items-center gap-2"><svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Sending...</span>
+                      ) : (
+                        <span className="flex items-center gap-2"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>Send</span>
+                      )}
+                    </button>
+                    {canInternal && (
+                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none hover:text-gray-900 transition-colors">
+                        <input type="checkbox" checked={isInternal} onChange={e => setIsInternal(e.target.checked)} className="rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                        Internal note
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
 
-        {/* Right: Status History */}
+        {/* Right column: Status History */}
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Status History</h2>
-            <div className="space-y-3">
-              {history?.length === 0 && <p className="text-sm text-gray-400">No history yet.</p>}
-              {history?.map(h => (
-                <div key={h.id} className="text-sm border-l-2 border-indigo-200 pl-3">
-                  <div className="flex items-center gap-2">
-                    {h.from_status ? statusBadge(h.from_status) : <span className="text-xs text-gray-400">—</span>}
-                    <span className="text-gray-400 text-xs">&rarr;</span>
-                    {statusBadge(h.to_status)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {h.changed_by_name || h.changed_by_email} &middot; {new Date(h.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                  {h.note && <p className="text-xs text-gray-600 mt-1 italic">{h.note}</p>}
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">Status History</h2>
+            {!history?.length ? (
+              <p className="text-sm text-gray-400 text-center py-4">No history yet.</p>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-3.5 top-2 bottom-2 w-0.5 bg-gray-100" />
+                <div className="space-y-4">
+                  {history.map(h => (
+                    <div key={h.id} className="relative pl-10">
+                      <div className={`absolute left-2 top-1.5 w-3 h-3 rounded-full ring-2 ring-white ${h.to_status === ticket.status ? 'bg-brand-500' : 'bg-gray-300'}`} />
+                      <div className="text-sm">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <Badge value={h.to_status} />
+                        </div>
+                        <p className="text-xs text-gray-500">{h.changed_by_name || h.changed_by_email}</p>
+                        <p className="text-xs text-gray-400">{formatDate(h.created_at)}</p>
+                        {h.note && <p className="text-xs text-gray-600 mt-1 italic border-l-2 border-gray-200 pl-2">{h.note}</p>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Status Change Modal */}
-      {showStatusModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowStatusModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Change Status</h2>
-            <p className="text-sm text-gray-500 mb-4">Current: {statusBadge(ticket.status)}</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Status</label>
-                <select value={newStatus} onChange={e => setNewStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" required>
-                  <option value="">— Select —</option>
-                  {allowedTransitions.map(s => (
-                    <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-                <textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Reason for change..." rows={2} />
-              </div>
-              <div className="flex gap-2 justify-end pt-2">
-                <button onClick={() => setShowStatusModal(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
-                <button onClick={() => newStatus && statusMutation.mutate({ status: newStatus, note: statusNote || undefined })} disabled={!newStatus} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50">Update</button>
-              </div>
-            </div>
+      <Modal open={showStatusModal} onClose={() => setShowStatusModal(false)} title="Change Status" size="sm">
+        <p className="text-sm text-gray-500 mb-4">Current: <Badge value={ticket.status} /></p>
+        <div className="space-y-4">
+          <div>
+            <label className="label">New Status</label>
+            <select value={newStatus} onChange={e => setNewStatus(e.target.value)} className="select" required>
+              <option value="">— Select —</option>
+              {allowedTransitions.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Note <span className="text-gray-400 font-normal">(optional)</span></label>
+            <textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} className="input" placeholder="Reason for change..." rows={2} />
+          </div>
+          <div className="flex gap-3 justify-end pt-2">
+            <button onClick={() => setShowStatusModal(false)} className="btn-secondary">Cancel</button>
+            <button onClick={() => newStatus && statusMutation.mutate({ status: newStatus, note: statusNote || undefined })} disabled={!newStatus || statusMutation.isPending} className="btn-primary">
+              {statusMutation.isPending ? (
+                <span className="flex items-center gap-2"><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Updating...</span>
+              ) : 'Update Status'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      <ConfirmDialog open={!!deleteCommentId} onClose={() => setDeleteCommentId(null)} onConfirm={() => { if (deleteCommentId) deleteCommentMutation.mutate(deleteCommentId); setDeleteCommentId(null) }} title="Delete Comment" message="Delete this comment?" />
+      <ConfirmDialog
+        open={!!deleteCommentId}
+        onClose={() => setDeleteCommentId(null)}
+        onConfirm={() => { if (deleteCommentId) deleteCommentMutation.mutate(deleteCommentId); setDeleteCommentId(null) }}
+        title="Delete Comment"
+        message="Delete this comment? This action can be undone (soft delete)."
+        loading={deleteCommentMutation.isPending}
+      />
     </div>
   )
 }

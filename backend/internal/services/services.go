@@ -188,6 +188,8 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, pass string) err
 }
 func (s *Service) SoftDeleteUser(ctx context.Context, id int64) error       { return s.repo.SoftDeleteUser(ctx, id) }
 func (s *Service) GetUserOrganizationIDs(ctx context.Context, uid int64) ([]int64, error) { return s.repo.GetUserOrganizationIDs(ctx, uid) }
+func (s *Service) GetUserOrganizationsWithDetails(ctx context.Context, uid int64) ([]models.UserOrgDetail, error) { return s.repo.GetUserOrganizationsWithDetails(ctx, uid) }
+func (s *Service) UpdateUserProfile(ctx context.Context, id int64, name string, avatarURL *string) error { return s.repo.UpdateUserProfile(ctx, id, name, avatarURL) }
 func (s *Service) SetUserOrganizations(ctx context.Context, uid int64, orgIDs []int64) error { return s.repo.SetUserOrganizations(ctx, uid, orgIDs) }
 
 func (s *Service) ListRoles(ctx context.Context) ([]models.Role, error)     { return s.repo.ListRoles(ctx) }

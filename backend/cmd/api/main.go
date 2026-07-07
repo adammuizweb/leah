@@ -53,12 +53,20 @@ func main() {
 		// Public
 		r.Post("/auth/login", h.Login)
 
+		// Uploads (public)
+		r.HandleFunc("/uploads/*", func(w http.ResponseWriter, r *http.Request) {
+			http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))).ServeHTTP(w, r)
+		})
+
 		// Protected
 		r.Group(func(r chi.Router) {
 			r.Use(auth)
 
 			r.Get("/auth/me", h.Me)
 			r.Put("/auth/password", h.ChangeMyPassword)
+			r.Put("/auth/profile", h.UpdateProfile)
+			r.Post("/auth/avatar", h.UploadAvatar)
+			r.Get("/auth/organizations", h.MyOrganizations)
 
 			r.Route("/tickets", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("tickets.read")).Get("/", h.ListTickets)

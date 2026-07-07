@@ -579,9 +579,9 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.
 func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
+		`SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.avatar_url, u.organization_id, u.created_at, u.deleted_at
 		 FROM users u LEFT JOIN roles ro ON ro.id = u.role_id WHERE u.id=$1`, id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.AvatarURL, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -611,7 +611,7 @@ func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]mo
 // ─── User Management ────────────────────────────────────────────
 
 func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
-	query := `SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.organization_id, u.created_at, u.deleted_at
+	query := `SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.avatar_url, u.organization_id, u.created_at, u.deleted_at
 		FROM users u LEFT JOIN roles ro ON ro.id=u.role_id`
 	args := []any{}
 	aidx := 1
@@ -631,7 +631,7 @@ func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	users := make([]models.User, 0)
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.RoleID, &u.Role, &u.IsSuperuser, &u.AvatarURL, &u.OrganizationID, &u.CreatedAt, &u.DeletedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -662,6 +662,43 @@ func (r *Repository) UpdateUser(ctx context.Context, u *models.User) error {
 
 func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, hash string) error {
 	tag, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2 AND deleted_at IS NULL`, hash, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
+func (r *Repository) GetUserOrganizationsWithDetails(ctx context.Context, userID int64) ([]models.UserOrgDetail, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT uo.organization_id, o.name, o.holding_id, h.name
+		 FROM user_organizations uo
+		 JOIN organizations o ON o.id = uo.organization_id
+		 JOIN holdings h ON h.id = o.holding_id
+		 WHERE uo.user_id=$1 ORDER BY h.name, o.name`, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	orgs := make([]models.UserOrgDetail, 0)
+	for rows.Next() {
+		var o models.UserOrgDetail
+		if err := rows.Scan(&o.OrganizationID, &o.OrgName, &o.HoldingID, &o.HoldingName); err != nil {
+			return nil, err
+		}
+		orgs = append(orgs, o)
+	}
+	return orgs, nil
+}
+
+func (r *Repository) UpdateUserProfile(ctx context.Context, id int64, name string, avatarURL *string) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET name=$1, avatar_url=COALESCE($2, avatar_url), updated_at=NOW() WHERE id=$3 AND deleted_at IS NULL`,
+		name, avatarURL, id,
+	)
 	if err != nil {
 		return err
 	}
