@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
+import { getAllArticles } from '../content'
 
-const posts = [
+const inlinePosts = [
   { slug: 'getting-started', title: 'Getting Started with LEAH', desc: 'Cara cepat install dan konfigurasi LEAH di server Anda.', date: '2026-06-30' },
   { slug: 'architecture-overview', title: 'Architecture Overview', desc: 'Bagaimana LEAH dibangun — Go backend, React frontend, PostgreSQL.', date: '2026-06-29' },
   { slug: 'role-permissions', title: 'Role & Permission System', desc: 'Memahami hierarki superuser, admin, dan permission granular.', date: '2026-06-28' },
@@ -10,8 +11,19 @@ const posts = [
   { slug: 'asset-management', title: 'Asset Management — Full Lifecycle', desc: 'Dari asset types, categories, models, hingga individual assets. CRUD, filter, search, bulk create, dan soft delete.', date: '2026-07-07' },
   { slug: 'soft-delete-bin', title: 'Soft Delete & Bin System — Data Recovery', desc: 'Bagaimana LEAH menangani penghapusan data: soft delete, restore, permanent delete, dan recovery workflow.', date: '2026-07-07' },
   { slug: 'user-management', title: 'User Management — CRUD, Roles & Multi-Org Access', desc: 'Membuat dan mengelola user, assignment role, multi-organisasi access, dan security best practices.', date: '2026-07-07' },
-  { slug: 'role-flows-guide', title: 'Role Flows Guide — Visual Tour of Permissions in Action', desc: 'Panduan visual lengkap dengan screenshots — bagaimana setiap role (Superuser, Superadmin, Admin, Agent, User) melihat dan berinteraksi dengan LEAH.', date: '2026-07-07' },
 ]
+
+// Merge file-based articles with inline ones (files take precedence)
+const fileArticles = getAllArticles()
+const seen = new Set<string>()
+const posts = [
+  ...fileArticles.map(a => ({ slug: a.slug, title: a.title, desc: a.desc, date: a.date })),
+  ...inlinePosts,
+].filter(p => {
+  if (seen.has(p.slug)) return false
+  seen.add(p.slug)
+  return true
+})
 
 export default function Blog() {
   return (
