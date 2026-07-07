@@ -28,6 +28,7 @@ export default function Tickets() {
   const [assetError, setAssetError] = useState(false)
 
   const [search, setSearch] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<number | ''>('')
@@ -133,34 +134,39 @@ export default function Tickets() {
 
       {/* Filters */}
       <div className="card mb-6">
-        <div className="p-4 flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+          <div className="relative sm:col-span-2 md:col-span-3 lg:col-span-3 xl:col-span-2">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search tickets..." className="input pl-9" />
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search tickets..." className="input pl-9 w-full" />
           </div>
-          <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="select min-w-[140px]">
-            <option value="">All holdings</option>
-            {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-          </select>
-          <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select min-w-[140px]" disabled={!holdingFilter}>
-            <option value="">All orgs</option>
-            {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)}{o.name}</option>)}
-          </select>
-          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All statuses</option>
-            <option value="new">New</option><option value="open">Open</option>
-            <option value="in_progress">In Progress</option><option value="pending">Pending</option>
-            <option value="resolved">Resolved</option><option value="closed">Closed</option><option value="cancelled">Cancelled</option>
-          </select>
-          <select value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All priorities</option>
-            <option value="low">Low</option><option value="medium">Medium</option>
-            <option value="high">High</option><option value="critical">Critical</option>
-          </select>
-          <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All types</option>
-            {ticketTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+
+          <button onClick={() => setShowFilters(!showFilters)} className="md:hidden col-span-full -mt-2 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            <svg className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            {showFilters ? 'Less filters' : 'More filters'}
+          </button>
+
+          <div className={`${showFilters ? 'flex flex-col gap-3' : 'hidden'} md:contents`}>
+            <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="select w-full min-w-0">
+              <option value="">All holdings</option>
+              {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </select>
+            <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select w-full min-w-0" disabled={!holdingFilter}>
+              <option value="">All orgs</option>
+              {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)}{o.name}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Status</option>
+              <option value="new">New</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option><option value="cancelled">Cancelled</option>
+            </select>
+            <select value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Priority</option>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+            </select>
+            <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Type</option>
+              {ticketTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 

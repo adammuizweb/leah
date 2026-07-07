@@ -8,7 +8,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<User>
   logout: () => void
   hasPermission: (perm: string) => boolean
 }
@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const perms = res.permissions || []
     api.setToken(res.token)  // set BEFORE navigate
     setState({ token: res.token, user: res.user, permissions: perms })
+    return res.user
   }
 
   const logout = () => {

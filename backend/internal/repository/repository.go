@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,6 +55,7 @@ type TicketFilter struct {
 	TypeID         int64
 	OrganizationID int64
 	HoldingID      int64
+	CreatedBy      *int64
 	Page           int
 	PerPage        int
 }
@@ -109,6 +111,11 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	if f.HoldingID > 0 {
 		where += fmt.Sprintf(` AND t.organization_id IN (SELECT id FROM organizations WHERE holding_id = $%d)`, aidx)
 		args = append(args, f.HoldingID)
+		aidx++
+	}
+	if f.CreatedBy != nil {
+		where += fmt.Sprintf(` AND t.created_by = $%d`, aidx)
+		args = append(args, *f.CreatedBy)
 		aidx++
 	}
 
@@ -365,6 +372,7 @@ type AssetFilter struct {
 	TypeID         int64
 	OrganizationID int64
 	HoldingID      int64
+	AssignedTo     *int64
 	Page           int
 	PerPage        int
 }
@@ -406,6 +414,11 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 	if f.HoldingID > 0 {
 		where += fmt.Sprintf(` AND a.organization_id IN (SELECT id FROM organizations WHERE holding_id = $%d)`, aidx)
 		args = append(args, f.HoldingID)
+		aidx++
+	}
+	if f.AssignedTo != nil {
+		where += fmt.Sprintf(` AND a.assigned_to = $%d`, aidx)
+		args = append(args, *f.AssignedTo)
 		aidx++
 	}
 
@@ -610,16 +623,30 @@ func (r *Repository) GetUserPermissions(ctx context.Context, userID int64) ([]mo
 
 // ─── User Management ────────────────────────────────────────────
 
-func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
+func (r *Repository) ListUsers(ctx context.Context, orgID *int64, holdingID *int64) ([]models.User, error) {
 	query := `SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_superuser, u.avatar_url, u.organization_id, u.created_at, u.deleted_at
 		FROM users u LEFT JOIN roles ro ON ro.id=u.role_id`
 	args := []any{}
 	aidx := 1
 
+	var where []string
 	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
-		query += fmt.Sprintf(` WHERE u.organization_id = ANY($%d)`, aidx)
+		where = append(where, fmt.Sprintf(`u.organization_id = ANY($%d)`, aidx))
 		args = append(args, orgIDs)
 		aidx++
+	}
+	if orgID != nil {
+		where = append(where, fmt.Sprintf(`u.organization_id = $%d`, aidx))
+		args = append(args, *orgID)
+		aidx++
+	}
+	if holdingID != nil {
+		where = append(where, fmt.Sprintf(`u.organization_id IN (SELECT id FROM organizations WHERE holding_id = $%d)`, aidx))
+		args = append(args, *holdingID)
+		aidx++
+	}
+	if len(where) > 0 {
+		query += ` WHERE ` + strings.Join(where, ` AND `)
 	}
 	query += ` ORDER BY u.created_at DESC`
 

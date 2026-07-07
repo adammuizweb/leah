@@ -37,6 +37,10 @@ func isValidTransition(from, to string) bool {
 func (s *Service) ListTickets(ctx context.Context, f repository.TicketFilter) (*repository.PaginatedResult[models.Ticket], error) {
 	return s.repo.ListTickets(ctx, f)
 }
+func (s *Service) ListMyTickets(ctx context.Context, f repository.TicketFilter, userID int64) (*repository.PaginatedResult[models.Ticket], error) {
+	f.CreatedBy = &userID
+	return s.repo.ListTickets(ctx, f)
+}
 
 func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	if t.Status == "" {
@@ -143,6 +147,10 @@ func (s *Service) DeleteSLAPolicy(ctx context.Context, id int64) error          
 func (s *Service) ListAssets(ctx context.Context, f repository.AssetFilter) (*repository.PaginatedResult[models.Asset], error) {
 	return s.repo.ListAssets(ctx, f)
 }
+func (s *Service) ListMyAssets(ctx context.Context, f repository.AssetFilter, userID int64) (*repository.PaginatedResult[models.Asset], error) {
+	f.AssignedTo = &userID
+	return s.repo.ListAssets(ctx, f)
+}
 func (s *Service) CreateAsset(ctx context.Context, a *models.Asset) error {
 	if a.Status == "" {
 		a.Status = "active"
@@ -169,7 +177,7 @@ func (s *Service) GetUserPermissions(ctx context.Context, userID int64) ([]model
 	return s.repo.GetUserPermissions(ctx, userID)
 }
 
-func (s *Service) ListUsers(ctx context.Context) ([]models.User, error)       { return s.repo.ListUsers(ctx) }
+func (s *Service) ListUsers(ctx context.Context, orgID, holdingID *int64) ([]models.User, error)       { return s.repo.ListUsers(ctx, orgID, holdingID) }
 func (s *Service) CreateUser(ctx context.Context, u *models.User, password string) error {
 	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

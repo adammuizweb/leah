@@ -12,6 +12,7 @@ import Profile from './pages/Profile'
 import Tickets from './pages/Tickets'
 import TicketDetail from './pages/TicketDetail'
 import Assets from './pages/Assets'
+import UserPanel from './pages/UserPanel'
 import Admin from './pages/Admin'
 import AdminUsers from './pages/AdminUsers'
 import AdminPermissions from './pages/AdminPermissions'
@@ -27,6 +28,14 @@ import AdminBin from './pages/AdminBin'
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
   if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function UserOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { token, user } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  const isUser = user?.role === 'user' && !user?.is_superuser
+  if (!isUser) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 
@@ -49,6 +58,7 @@ function App() {
         <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/login" element={<Login />} />
         <Route element={<AppShell />}>
+          <Route path="/my" element={<UserOnlyRoute><UserPanel /></UserOnlyRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />

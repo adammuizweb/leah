@@ -230,7 +230,10 @@ export const api = {
   getMyOrgs: () => request<UserOrgDetail[]>('/auth/organizations'),
 
   users: {
-    list: () => request<User[]>('/users'),
+    list: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : ''
+      return request<User[]>('/users' + q)
+    },
     get: (id: number) => request<User>(`/users/${id}`),
     create: (data: { email: string; name: string; password: string; role_id: number | null; organization_id?: number | null }) =>
       request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
@@ -297,6 +300,10 @@ export const api = {
       const q = params ? '?' + new URLSearchParams(params).toString() : ''
       return request<PaginatedResult<Ticket>>('/tickets' + q)
     },
+    mine: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : ''
+      return request<PaginatedResult<Ticket>>('/tickets/mine' + q)
+    },
     get: (id: number) => request<Ticket>(`/tickets/${id}`),
     create: (data: Partial<Ticket>) =>
       request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) }),
@@ -337,6 +344,10 @@ export const api = {
     list: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : ''
       return request<PaginatedResult<Asset>>('/assets' + q)
+    },
+    mine: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : ''
+      return request<PaginatedResult<Asset>>('/assets/mine' + q)
     },
     get: (id: number) => request<Asset>(`/assets/${id}`),
     create: (data: Partial<Asset>) =>

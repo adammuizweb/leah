@@ -9,6 +9,7 @@ import Badge from '../components/Badge'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { TableSkeleton } from '../components/LoadingSkeleton'
+import { Navigate } from 'react-router-dom'
 
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
@@ -16,6 +17,9 @@ export default function Assets() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { user, permissions } = useAuth()
+
+  const isUser = user?.role === 'user' && !user?.is_superuser
+  if (isUser) return <Navigate to="/my" replace />
   const [showForm, setShowForm] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -26,6 +30,9 @@ export default function Assets() {
   const [modelId, setModelId] = useState<number | ''>('')
   const [astatus, setAstatus] = useState('active')
   const [organizationId, setOrganizationId] = useState<number | ''>('')
+  const [assignedTo, setAssignedTo] = useState<number | ''>('')
+  const [assignHoldingFilter, setAssignHoldingFilter] = useState<number | ''>('')
+  const [assignOrgFilter, setAssignOrgFilter] = useState<number | ''>('')
 
   const [bulkModelId, setBulkModelId] = useState<number | ''>('')
   const [bulkQty, setBulkQty] = useState(1)
@@ -35,6 +42,7 @@ export default function Assets() {
   const [bulkOrgId, setBulkOrgId] = useState<number | ''>('')
 
   const [search, setSearch] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<number | ''>('')
   const [modelFilter, setModelFilter] = useState<number | ''>('')
@@ -59,6 +67,15 @@ export default function Assets() {
   const { data: models } = useQuery({ queryKey: ['asset-models'], queryFn: api.assetModels.list })
   const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
   const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users.list() })
+  const userFilterParams: Record<string, string> = {}
+  if (assignHoldingFilter) userFilterParams.holding_id = String(assignHoldingFilter)
+  if (assignOrgFilter) userFilterParams.organization_id = String(assignOrgFilter)
+  const { data: filteredUsers } = useQuery({
+    queryKey: ['users', userFilterParams],
+    queryFn: () => api.users.list(Object.keys(userFilterParams).length ? userFilterParams : undefined),
+    enabled: !!assignOrgFilter || !!assignHoldingFilter,
+  })
 
   const filteredCats = assetTypeId ? categories?.filter(c => c.type_id === assetTypeId) : categories
   const filteredModels = assetTypeId ? models?.filter(m => m.type_id === assetTypeId) : models
@@ -67,6 +84,7 @@ export default function Assets() {
   const typeMap = new Map(types?.map(t => [t.id, t.name]) || [])
   const catMap = new Map(categories?.map(c => [c.id, c.name]) || [])
   const modelMap = new Map(models?.map(m => [m.id, m.name]) || [])
+  const userMap = new Map(users?.map(u => [u.id, u.name]) || [])
 
   const canEdit = (_a: Asset) => user?.is_superuser || user?.role === 'admin'
   const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('assets.bulk_delete')
@@ -96,12 +114,12 @@ export default function Assets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function resetForm() { setShowForm(false); setEditId(null); setName(''); setSerial(''); setAssetTypeId(''); setCategoryId(''); setModelId(''); setAstatus('active'); setOrganizationId('') }
-  function openEdit(a: Asset) { setEditId(a.id); setName(a.name); setSerial(a.serial || ''); setAssetTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setModelId(a.model_id || ''); setAstatus(a.status || 'active'); setOrganizationId(a.organization_id || ''); setShowForm(true) }
+  function resetForm() { setShowForm(false); setEditId(null); setName(''); setSerial(''); setAssetTypeId(''); setCategoryId(''); setModelId(''); setAstatus('active'); setOrganizationId(''); setAssignedTo(''); setAssignHoldingFilter(''); setAssignOrgFilter('') }
+  function openEdit(a: Asset) { setEditId(a.id); setName(a.name); setSerial(a.serial || ''); setAssetTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setModelId(a.model_id || ''); setAstatus(a.status || 'active'); setOrganizationId(a.organization_id || ''); setAssignedTo(a.assigned_to || ''); setAssignHoldingFilter(''); setAssignOrgFilter(''); setShowForm(true) }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const body = { name, serial: serial || null, type_id: assetTypeId || null, category_id: categoryId || null, model_id: modelId || null, status: astatus, organization_id: editId ? undefined : (organizationId || null) } as Partial<Asset>
+    const body = { name, serial: serial || null, type_id: assetTypeId || null, category_id: categoryId || null, model_id: modelId || null, status: astatus, assigned_to: assignedTo || null, organization_id: editId ? undefined : (organizationId || null) } as Partial<Asset>
     editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
 
@@ -149,32 +167,39 @@ export default function Assets() {
 
       {/* Filters */}
       <div className="card mb-6">
-        <div className="p-4 flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+          <div className="relative sm:col-span-2 md:col-span-3 lg:col-span-3 xl:col-span-2">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search assets..." className="input pl-9" />
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search assets..." className="input pl-9 w-full" />
           </div>
-          <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="select min-w-[140px]">
-            <option value="">All holdings</option>
-            {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-          </select>
-          <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select min-w-[140px]" disabled={!holdingFilter}>
-            <option value="">All orgs</option>
-            {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)}{o.name}</option>)}
-          </select>
-          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All statuses</option>
-            <option value="active">Active</option><option value="maintenance">Maintenance</option>
-            <option value="retired">Retired</option><option value="lost">Lost</option>
-          </select>
-          <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All types</option>
-            {types?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <select value={modelFilter} onChange={e => { setModelFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select min-w-[130px]">
-            <option value="">All models</option>
-            {models?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+
+          <button onClick={() => setShowFilters(!showFilters)} className="md:hidden col-span-full -mt-2 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            <svg className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            {showFilters ? 'Less filters' : 'More filters'}
+          </button>
+
+          <div className={`${showFilters ? 'flex flex-col gap-3' : 'hidden'} md:contents`}>
+            <select value={holdingFilter} onChange={e => { setHoldingFilter(e.target.value ? Number(e.target.value) : ''); setOrgFilter(''); setPage(1) }} className="select w-full min-w-0">
+              <option value="">All holdings</option>
+              {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </select>
+            <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select w-full min-w-0" disabled={!holdingFilter}>
+              <option value="">All orgs</option>
+              {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)}{o.name}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Status</option>
+              <option value="active">Active</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option><option value="lost">Lost</option>
+            </select>
+            <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Type</option>
+              {types?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <select value={modelFilter} onChange={e => { setModelFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="select w-full min-w-0">
+              <option value="">Model</option>
+              {models?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -195,6 +220,7 @@ export default function Assets() {
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Model</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Serial</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Assigned To</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -210,6 +236,7 @@ export default function Assets() {
                       <td className="px-4 py-3.5 text-sm text-gray-500">{asset.category_id ? (catMap.get(asset.category_id) || '—') : '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{asset.model_id ? (modelMap.get(asset.model_id) || '—') : '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500 font-mono">{asset.serial || '—'}</td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500">{asset.assigned_to ? (userMap.get(asset.assigned_to) || `User #${asset.assigned_to}`) : '—'}</td>
                       <td className="px-4 py-3.5"><Badge value={asset.status || 'active'} icon="dot" /></td>
                       <td className="px-4 py-3.5 text-right text-sm">
                         {canEdit(asset) && <button onClick={() => openEdit(asset)} className="btn-ghost btn-sm">Edit</button>}
@@ -301,6 +328,24 @@ export default function Assets() {
                 <option value="retired">Retired</option>
                 <option value="lost">Lost</option>
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Assigned To</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <select value={assignHoldingFilter} onChange={e => { setAssignHoldingFilter(e.target.value ? Number(e.target.value) : ''); setAssignOrgFilter(''); setAssignedTo('') }} className="select text-xs py-1.5 min-w-[130px]">
+                  <option value="">Holding</option>
+                  {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                </select>
+                <select value={assignOrgFilter} onChange={e => { setAssignOrgFilter(e.target.value ? Number(e.target.value) : ''); setAssignedTo('') }} className="select text-xs py-1.5 min-w-[130px]" disabled={!assignHoldingFilter}>
+                  <option value="">Organization</option>
+                  {holdings?.find(h => h.id === assignHoldingFilter) && orgs?.filter(o => o.holding_id === assignHoldingFilter).map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)}{o.name}</option>)}
+                </select>
+              </div>
+              <select value={assignedTo} onChange={e => setAssignedTo(e.target.value ? Number(e.target.value) : '')} className="select">
+                <option value="">— Unassigned —</option>
+                {(assignOrgFilter ? filteredUsers : assignHoldingFilter ? filteredUsers : users)?.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+              </select>
+              {!assignOrgFilter && !assignHoldingFilter && <p className="text-xs text-gray-400 mt-1">Select holding & organization to filter users</p>}
             </div>
             {!editId && (
               <div className="sm:col-span-2">

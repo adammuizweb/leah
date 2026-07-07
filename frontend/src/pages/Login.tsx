@@ -16,8 +16,9 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
-      navigate('/dashboard')
+      const u = await login(email, password)
+      const isUser = u.role === 'user' && !u.is_superuser
+      navigate(isUser ? '/my' : '/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

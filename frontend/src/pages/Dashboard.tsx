@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useAuth } from '../services/auth'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import { CardSkeleton } from '../components/LoadingSkeleton'
 import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
@@ -19,6 +19,9 @@ const statusColors: Record<string, string> = {
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+
+  const isUser = user?.role === 'user' && !user?.is_superuser
+  if (isUser) return <Navigate to="/my" replace />
 
   const { data: ticketsData, isLoading: ticketsLoading } = useQuery({
     queryKey: ['tickets', { per_page: '1' }],

@@ -57,6 +57,20 @@ func parsePagination(r *http.Request) (page, perPage int) {
 	return
 }
 
+func (h *Handler) ListMyTickets(w http.ResponseWriter, r *http.Request) {
+	page, perPage := parsePagination(r)
+	f := repository.TicketFilter{
+		Page:    page,
+		PerPage: perPage,
+	}
+	result, err := h.svc.ListMyTickets(r.Context(), f, userIDFromCtx(r))
+	if err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, result)
+}
+
 func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
 	page, perPage := parsePagination(r)
 	typeID, _ := strconv.ParseInt(r.URL.Query().Get("type_id"), 10, 64)
@@ -139,6 +153,22 @@ func (h *Handler) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 204, nil)
+}
+
+func (h *Handler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
+	page, perPage := parsePagination(r)
+	f := repository.AssetFilter{
+		Search:  r.URL.Query().Get("search"),
+		Status:  r.URL.Query().Get("status"),
+		Page:    page,
+		PerPage: perPage,
+	}
+	result, err := h.svc.ListMyAssets(r.Context(), f, userIDFromCtx(r))
+	if err != nil {
+		respond(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, 200, result)
 }
 
 func (h *Handler) ListAssets(w http.ResponseWriter, r *http.Request) {

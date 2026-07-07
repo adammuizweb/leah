@@ -70,6 +70,7 @@ func main() {
 
 			r.Route("/tickets", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("tickets.read")).Get("/", h.ListTickets)
+				r.With(leahmw.RequirePermission("tickets.read.own")).Get("/mine", h.ListMyTickets)
 				r.With(leahmw.RequirePermission("tickets.create")).Post("/", h.CreateTicket)
 				r.With(leahmw.RequirePermission("tickets.read")).Get("/{id}", h.GetTicket)
 				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}", h.UpdateTicket)
@@ -83,6 +84,7 @@ func main() {
 
 			r.Route("/assets", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("assets.read")).Get("/", h.ListAssets)
+				r.With(leahmw.RequirePermission("assets.read.own")).Get("/mine", h.ListMyAssets)
 				r.With(leahmw.RequirePermission("assets.create")).Post("/", h.CreateAsset)
 				r.With(leahmw.RequirePermission("assets.create")).Post("/bulk", h.BulkCreateAssets)
 				r.With(leahmw.RequirePermission("assets.read")).Get("/{id}", h.GetAsset)

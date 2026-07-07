@@ -14,7 +14,7 @@ export default function AdminUsers() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null)
   const [selectedOrgs, setSelectedOrgs] = useState<Set<number>>(new Set())
 
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: api.users.list })
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users.list() })
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
   const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
   const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })

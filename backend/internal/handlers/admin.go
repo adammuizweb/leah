@@ -12,7 +12,18 @@ import (
 // ─── Users ──────────────────────────────────────────────────────
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.svc.ListUsers(r.Context())
+	var orgID, holdingID *int64
+	if v := r.URL.Query().Get("organization_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			orgID = &id
+		}
+	}
+	if v := r.URL.Query().Get("holding_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			holdingID = &id
+		}
+	}
+	users, err := h.svc.ListUsers(r.Context(), orgID, holdingID)
 	if err != nil {
 		respond(w, 500, map[string]string{"error": err.Error()})
 		return
