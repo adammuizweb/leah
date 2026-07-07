@@ -12,17 +12,26 @@ export default function Assets() {
   const { toast } = useToast()
   const { user, permissions } = useAuth()
   const [showForm, setShowForm] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState<number | ''>('')
   const [categoryId, setCategoryId] = useState<number | ''>('')
+  const [modelId, setModelId] = useState<number | ''>('')
   const [serial, setSerial] = useState('')
   const [status, setStatus] = useState('active')
   const [orgId, setOrgId] = useState<number | ''>('')
+  const [bulkModelId, setBulkModelId] = useState<number | ''>('')
+  const [bulkQty, setBulkQty] = useState(1)
+  const [bulkPrefix, setBulkPrefix] = useState('')
+  const [bulkSerials, setBulkSerials] = useState('')
+  const [bulkOrgId, setBulkOrgId] = useState<number | ''>('')
+  const [bulkHoldingFilter, setBulkHoldingFilter] = useState<number | ''>('')
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<number | ''>('')
+  const [modelFilter, setModelFilter] = useState<number | ''>('')
   const [holdingFilter, setHoldingFilter] = useState<number | ''>('')
   const [orgFilter, setOrgFilter] = useState<number | ''>('')
   const [page, setPage] = useState(1)
@@ -33,19 +42,24 @@ export default function Assets() {
   if (search) params.search = search
   if (statusFilter) params.status = statusFilter
   if (typeFilter) params.type_id = String(typeFilter)
+  if (modelFilter) params.model_id = String(modelFilter)
   if (holdingFilter) params.holding_id = String(holdingFilter)
   if (orgFilter) params.organization_id = String(orgFilter)
 
   const { data: result } = useQuery({ queryKey: ['assets', params], queryFn: () => api.assets.list(params) })
   const { data: assetTypes } = useQuery({ queryKey: ['asset-types'], queryFn: api.assetTypes.list })
   const { data: categories } = useQuery({ queryKey: ['asset-categories'], queryFn: api.assetCategories.list })
+  const { data: models } = useQuery({ queryKey: ['asset-models'], queryFn: api.assetModels.list })
   const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
   const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
 
   const typeMap = new Map(assetTypes?.map(t => [t.id, t.name]) || [])
   const catMap = new Map(categories?.map(c => [c.id, c.name]) || [])
+  const modelMap = new Map(models?.map(m => [m.id, m.name]) || [])
   const filteredCats = typeId ? categories?.filter(c => c.type_id === typeId) : []
   const filteredOrgs = holdingFilter ? orgs?.filter(o => o.holding_id === holdingFilter) : orgs
+  const bulkFilteredOrgs = bulkHoldingFilter ? orgs?.filter(o => o.holding_id === bulkHoldingFilter) : orgs
+  const filteredModels = typeFilter ? models?.filter(m => m.type_id === typeFilter) : models
 
   const canEdit = (a: Asset) => user?.is_superuser || user?.role === 'admin' || a.created_by === user?.id
   const canBulk = user?.is_superuser || user?.role === 'admin' || permissions.includes('assets.bulk_delete')
@@ -69,14 +83,31 @@ export default function Assets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function resetForm() { setShowForm(false); setEditId(null); setName(''); setTypeId(''); setCategoryId(''); setSerial(''); setStatus('active'); setOrgId(user?.organization_id || '') }
-  function openEdit(a: Asset) { setEditId(a.id); setName(a.name); setTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setSerial(a.serial || ''); setStatus(a.status); setShowForm(true) }
+  const bulkMutation = useMutation({
+    mutationFn: (data: { model_id: number; quantity: number; serial_prefix?: string; serial_numbers?: string[]; organization_id?: number | null }) => api.assets.bulk(data),
+    onSuccess: (res) => { toast(`Created ${res.created} assets`, 'success'); queryClient.invalidateQueries({ queryKey: ['assets'] }); setShowBulk(false) },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
+  function resetForm() { setShowForm(false); setEditId(null); setName(''); setTypeId(''); setCategoryId(''); setModelId(''); setSerial(''); setStatus('active'); setOrgId(user?.organization_id || '') }
+  function openEdit(a: Asset) { setEditId(a.id); setName(a.name); setTypeId(a.type_id || ''); setCategoryId(a.category_id || ''); setModelId(a.model_id || ''); setSerial(a.serial || ''); setStatus(a.status); setShowForm(true) }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedType = assetTypes?.find(t => t.id === typeId)
-    const body = { name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, serial, status, organization_id: orgId || null } as Partial<Asset>
+    const body = { name, type: selectedType?.name || '', type_id: typeId || null, category_id: categoryId || null, model_id: modelId || null, serial, status, organization_id: orgId || null } as Partial<Asset>
     editId ? updateMutation.mutate(body) : createMutation.mutate(body)
+  }
+
+  const handleBulk = (e: React.FormEvent) => {
+    e.preventDefault()
+    const serList = bulkSerials.trim() ? bulkSerials.split(/[\n,]+/).map(s => s.trim()).filter(Boolean) : undefined
+    const serials = serList && serList.length > 0 ? serList : undefined
+    const prefix = !serials && bulkPrefix.trim() ? bulkPrefix.trim() : undefined
+    if (!serials && !prefix && bulkQty > 20) {
+      if (!confirm(`Create ${bulkQty} assets without serial numbers? This is fine for consumables but not recommended for trackable assets.`)) return
+    }
+    bulkMutation.mutate({ model_id: bulkModelId as number, quantity: bulkQty, serial_prefix: prefix, serial_numbers: serials, organization_id: bulkOrgId ? Number(bulkOrgId) : null })
   }
 
   function toggleSelect(id: number) {
@@ -103,7 +134,10 @@ export default function Assets() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assets</h1>
-        {!showForm && <button onClick={() => { resetForm(); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">+ New Asset</button>}
+        <div className="flex gap-2">
+          {!showForm && <button onClick={() => { resetForm(); setShowForm(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">+ New Asset</button>}
+          {!showBulk && <button onClick={() => { setBulkModelId(''); setBulkQty(1); setBulkPrefix(''); setBulkSerials(''); setBulkOrgId(user?.organization_id || ''); setBulkHoldingFilter(''); setShowBulk(true) }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">+ Bulk Create</button>}
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -117,7 +151,7 @@ export default function Assets() {
       <Modal open={showForm} onClose={resetForm} title={editId ? 'Edit Asset' : 'New Asset'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Name" required />
-          <input value={serial} onChange={e => setSerial(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Serial number" />
+          <input value={serial} onChange={e => setSerial(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Serial number (optional)" />
           <select value={typeId} onChange={e => { setTypeId(e.target.value ? Number(e.target.value) : ''); setCategoryId('') }} className="w-full border rounded-lg px-3 py-2 text-sm" required>
             <option value="">— Select type —</option>
             {assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -125,6 +159,10 @@ export default function Assets() {
           <select value={categoryId} onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm" disabled={!typeId}>
             <option value="">— No category —</option>
             {filteredCats?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={modelId} onChange={e => setModelId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">— No model —</option>
+            {filteredModels?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
           <select value={status} onChange={e => setStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
             <option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option>
@@ -144,6 +182,37 @@ export default function Assets() {
         </form>
       </Modal>
 
+      <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Create Assets">
+        <form onSubmit={handleBulk} className="space-y-4">
+          <select value={bulkModelId} onChange={e => setBulkModelId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm" required>
+            <option value="">— Select model —</option>
+            {models?.map(m => <option key={m.id} value={m.id}>{m.name} {m.manufacturer ? `(${m.manufacturer})` : ''}</option>)}
+          </select>
+          <input type="number" min={1} max={500} value={bulkQty} onChange={e => setBulkQty(Math.min(500, Math.max(1, Number(e.target.value) || 1)))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Quantity (max 500)" required />
+          <input value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Serial prefix (e.g. AP-2024-) — optional" disabled={!!bulkSerials.trim()} />
+          <textarea value={bulkSerials} onChange={e => setBulkSerials(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" rows={3} placeholder="Or paste serial numbers, one per line — optional" disabled={!!bulkPrefix.trim()} />
+          <p className="text-xs text-gray-400">Leave both empty for non-serialized items (e.g. consumables, tools). Each asset still gets a unique ID.</p>
+          <div className="border-t border-gray-100 pt-2">
+            <p className="text-xs font-medium text-gray-500 mb-2">DISTRIBUTION TARGET</p>
+            <select value={bulkHoldingFilter} onChange={e => { setBulkHoldingFilter(e.target.value ? Number(e.target.value) : ''); setBulkOrgId('') }} className="w-full border rounded-lg px-3 py-2 text-sm mb-2">
+              <option value="">All holdings</option>
+              {holdings?.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </select>
+            <select value={bulkOrgId} onChange={e => setBulkOrgId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm" disabled={!bulkHoldingFilter}>
+              <option value="">— Select organization —</option>
+              {bulkFilteredOrgs?.map(o => {
+                const h = holdings?.find(hh => hh.id === o.holding_id)
+                return <option key={o.id} value={o.id}>{h?.name || ''} / {'—'.repeat(o.level)} {o.name}</option>
+              })}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setShowBulk(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm" disabled={bulkMutation.isPending}>Create {bulkQty} Assets</button>
+          </div>
+        </form>
+      </Modal>
+
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 flex flex-wrap gap-3 items-center border-b border-gray-100">
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search assets..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
@@ -157,11 +226,12 @@ export default function Assets() {
           </select>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option></select>
           <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All types</option>{assetTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          <select value={modelFilter} onChange={e => { setModelFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All models</option>{filteredModels?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
           <span className="text-xs text-gray-400">{result?.total || 0} assets</span>
         </div>
 
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
+          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody className="divide-y divide-gray-200">
             {assets.map(asset => (
               <tr key={asset.id} className={selected.has(asset.id) ? 'bg-indigo-50/50' : ''}>
@@ -169,7 +239,8 @@ export default function Assets() {
                 <td className="px-4 py-4 text-sm text-gray-900">{asset.name}</td>
                 <td className="px-4 py-4 text-sm text-gray-900">{asset.type_id ? (typeMap.get(asset.type_id) || asset.type) : asset.type}</td>
                 <td className="px-4 py-4 text-sm text-gray-500">{asset.category_id ? (catMap.get(asset.category_id) || '—') : '—'}</td>
-                <td className="px-4 py-4 text-sm text-gray-500">{asset.serial}</td>
+                <td className="px-4 py-4 text-sm text-gray-500">{asset.model_id ? (modelMap.get(asset.model_id) || '—') : '—'}</td>
+                <td className="px-4 py-4 text-sm text-gray-500">{asset.serial || '—'}</td>
                 <td className="px-4 py-4"><span className={`inline-flex px-2 py-1 text-xs rounded-full ${asset.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{asset.status}</span></td>
                 <td className="px-4 py-4 text-sm space-x-2">
                   {canEdit(asset) && <button onClick={() => openEdit(asset)} className="text-indigo-600 hover:text-indigo-800">Edit</button>}

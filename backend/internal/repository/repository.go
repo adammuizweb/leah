@@ -45,12 +45,13 @@ func (r *Repository) scopeOrgIDs(ctx context.Context) []int64 {
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, created_at, updated_at`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, created_at, updated_at`
 
 type TicketFilter struct {
 	Search         string
 	Status         string
 	Priority       string
+	TypeID         int64
 	OrganizationID int64
 	HoldingID      int64
 	Page           int
@@ -95,6 +96,11 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 		args = append(args, f.Priority)
 		aidx++
 	}
+	if f.TypeID > 0 {
+		where += fmt.Sprintf(` AND t.type_id = $%d`, aidx)
+		args = append(args, f.TypeID)
+		aidx++
+	}
 	if f.OrganizationID > 0 {
 		where += fmt.Sprintf(` AND t.organization_id = $%d`, aidx)
 		args = append(args, f.OrganizationID)
@@ -125,7 +131,7 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	tickets := make([]models.Ticket, 0)
 	for rows.Next() {
 		var t models.Ticket
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt, &t.SLAResolveAt, &t.ClosedAt, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -137,8 +143,8 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 
 func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -146,7 +152,7 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 	t := &models.Ticket{}
 	err := r.db.QueryRow(ctx,
 		`SELECT `+ticketCols+` FROM tickets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt, &t.SLAResolveAt, &t.ClosedAt, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found")
 	}
@@ -155,8 +161,8 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 
 func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, organization_id=$7, updated_at=NOW(), updated_by=$8 WHERE id=$9 AND deleted_at IS NULL`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, userID, t.ID,
+		`UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, organization_id=$7, type_id=$8, updated_at=NOW(), updated_by=$9 WHERE id=$10 AND deleted_at IS NULL`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, t.TypeID, userID, t.ID,
 	)
 	if err != nil {
 		return err
@@ -165,6 +171,56 @@ func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID 
 		return fmt.Errorf("ticket not found")
 	}
 	return nil
+}
+
+func (r *Repository) UpdateTicketStatus(ctx context.Context, ticketID int64, newStatus string, userID int64, note *string) error {
+	now := time.Now()
+	var closedAt *time.Time
+	if newStatus == "closed" {
+		closedAt = &now
+	}
+	tag, err := r.db.Exec(ctx,
+		`UPDATE tickets SET status=$1, closed_at=$2, updated_at=NOW(), updated_by=$3 WHERE id=$4 AND deleted_at IS NULL`,
+		newStatus, closedAt, userID, ticketID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ticket not found")
+	}
+	return nil
+}
+
+func (r *Repository) CreateStatusHistory(ctx context.Context, h *models.TicketStatusHistory) error {
+	return r.db.QueryRow(ctx,
+		`INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
+		h.TicketID, h.FromStatus, h.ToStatus, h.ChangedBy, h.Note,
+	).Scan(&h.ID, &h.CreatedAt)
+}
+
+func (r *Repository) ListStatusHistory(ctx context.Context, ticketID int64) ([]models.TicketStatusHistory, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT h.id, h.ticket_id, h.from_status, h.to_status, h.changed_by, h.note, h.created_at,
+		        u.name, u.email
+		 FROM ticket_status_history h
+		 JOIN users u ON u.id = h.changed_by
+		 WHERE h.ticket_id = $1
+		 ORDER BY h.created_at ASC`, ticketID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hh := make([]models.TicketStatusHistory, 0)
+	for rows.Next() {
+		var h models.TicketStatusHistory
+		if err := rows.Scan(&h.ID, &h.TicketID, &h.FromStatus, &h.ToStatus, &h.ChangedBy, &h.Note, &h.CreatedAt, &h.ChangedByName, &h.ChangedByEmail); err != nil {
+			return nil, err
+		}
+		hh = append(hh, h)
+	}
+	return hh, nil
 }
 
 func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
@@ -178,9 +234,130 @@ func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
 	return nil
 }
 
+// ─── Ticket Types ───────────────────────────────────────────────
+
+func (r *Repository) ListTicketTypes(ctx context.Context) ([]models.TicketType, error) {
+	rows, err := r.db.Query(ctx, `SELECT id, name, created_at FROM ticket_types WHERE deleted_at IS NULL ORDER BY name`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	tt := make([]models.TicketType, 0)
+	for rows.Next() {
+		var t models.TicketType
+		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil { return nil, err }
+		tt = append(tt, t)
+	}
+	return tt, nil
+}
+
+func (r *Repository) CreateTicketType(ctx context.Context, t *models.TicketType) error {
+	return r.db.QueryRow(ctx, `INSERT INTO ticket_types (name) VALUES ($1) RETURNING id, created_at`, t.Name).Scan(&t.ID, &t.CreatedAt)
+}
+
+func (r *Repository) UpdateTicketType(ctx context.Context, t *models.TicketType) error {
+	_, err := r.db.Exec(ctx, `UPDATE ticket_types SET name=$1 WHERE id=$2 AND deleted_at IS NULL`, t.Name, t.ID)
+	return err
+}
+
+func (r *Repository) DeleteTicketType(ctx context.Context, id int64) error {
+	tag, err := r.db.Exec(ctx, `UPDATE ticket_types SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
+	if err != nil { return err }
+	if tag.RowsAffected() == 0 { return fmt.Errorf("ticket type not found") }
+	return nil
+}
+
+// ─── Ticket Comments ────────────────────────────────────────────
+
+func (r *Repository) ListTicketComments(ctx context.Context, ticketID int64, includeInternal bool) ([]models.TicketComment, error) {
+	query := `SELECT c.id, c.ticket_id, c.user_id, c.content, c.is_internal, c.created_at,
+	                 u.name, u.email
+	          FROM ticket_comments c
+	          JOIN users u ON u.id = c.user_id
+	          WHERE c.ticket_id = $1 AND c.deleted_at IS NULL`
+	if !includeInternal {
+		query += ` AND c.is_internal = false`
+	}
+	query += ` ORDER BY c.created_at ASC`
+
+	rows, err := r.db.Query(ctx, query, ticketID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	cc := make([]models.TicketComment, 0)
+	for rows.Next() {
+		var c models.TicketComment
+		if err := rows.Scan(&c.ID, &c.TicketID, &c.UserID, &c.Content, &c.IsInternal, &c.CreatedAt, &c.UserName, &c.UserEmail); err != nil {
+			return nil, err
+		}
+		cc = append(cc, c)
+	}
+	return cc, nil
+}
+
+func (r *Repository) CreateTicketComment(ctx context.Context, c *models.TicketComment) error {
+	return r.db.QueryRow(ctx,
+		`INSERT INTO ticket_comments (ticket_id, user_id, content, is_internal) VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
+		c.TicketID, c.UserID, c.Content, c.IsInternal,
+	).Scan(&c.ID, &c.CreatedAt)
+}
+
+func (r *Repository) DeleteTicketComment(ctx context.Context, id int64) error {
+	tag, err := r.db.Exec(ctx, `UPDATE ticket_comments SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
+	if err != nil { return err }
+	if tag.RowsAffected() == 0 { return fmt.Errorf("comment not found") }
+	return nil
+}
+
+// ─── SLA Policies ───────────────────────────────────────────────
+
+func (r *Repository) ListSLAPolicies(ctx context.Context) ([]models.SLAPolicy, error) {
+	rows, err := r.db.Query(ctx, `SELECT id, name, priority, response_hours, resolve_hours, created_at FROM sla_policies ORDER BY priority`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	pp := make([]models.SLAPolicy, 0)
+	for rows.Next() {
+		var p models.SLAPolicy
+		if err := rows.Scan(&p.ID, &p.Name, &p.Priority, &p.ResponseHours, &p.ResolveHours, &p.CreatedAt); err != nil { return nil, err }
+		pp = append(pp, p)
+	}
+	return pp, nil
+}
+
+func (r *Repository) GetSLAPolicyByPriority(ctx context.Context, priority string) (*models.SLAPolicy, error) {
+	p := &models.SLAPolicy{}
+	err := r.db.QueryRow(ctx, `SELECT id, name, priority, response_hours, resolve_hours, created_at FROM sla_policies WHERE priority=$1`, priority,
+	).Scan(&p.ID, &p.Name, &p.Priority, &p.ResponseHours, &p.ResolveHours, &p.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("SLA policy not found for priority: %s", priority)
+	}
+	return p, nil
+}
+
+func (r *Repository) CreateSLAPolicy(ctx context.Context, p *models.SLAPolicy) error {
+	return r.db.QueryRow(ctx,
+		`INSERT INTO sla_policies (name, priority, response_hours, resolve_hours) VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
+		p.Name, p.Priority, p.ResponseHours, p.ResolveHours,
+	).Scan(&p.ID, &p.CreatedAt)
+}
+
+func (r *Repository) UpdateSLAPolicy(ctx context.Context, p *models.SLAPolicy) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE sla_policies SET name=$1, priority=$2, response_hours=$3, resolve_hours=$4 WHERE id=$5`,
+		p.Name, p.Priority, p.ResponseHours, p.ResolveHours, p.ID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteSLAPolicy(ctx context.Context, id int64) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM sla_policies WHERE id=$1`, id)
+	if err != nil { return err }
+	if tag.RowsAffected() == 0 { return fmt.Errorf("SLA policy not found") }
+	return nil
+}
+
 // ─── Assets ─────────────────────────────────────────────────────
 
-const assetCols = `id, name, type, type_id, category_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
+const assetCols = `id, name, type, type_id, category_id, model_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
+
+const modelCols = `id, name, manufacturer, part_number, category_id, type_id, created_at, updated_at`
 
 type AssetFilter struct {
 	Search         string
@@ -250,7 +427,7 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 	assets := make([]models.Asset, 0)
 	for rows.Next() {
 		var a models.Asset
-		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.ModelID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -262,8 +439,8 @@ func (r *Repository) ListAssets(ctx context.Context, f AssetFilter) (*PaginatedR
 
 func (r *Repository) CreateAsset(ctx context.Context, a *models.Asset) error {
 	return r.db.QueryRow(ctx,
-		`INSERT INTO assets (name, type, type_id, category_id, serial, status, location, assigned_to, created_by, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, created_at, updated_at`,
-		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy, a.OrganizationID,
+		`INSERT INTO assets (name, type, type_id, category_id, model_id, serial, status, location, assigned_to, created_by, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, created_at, updated_at`,
+		a.Name, a.Type, a.TypeID, a.CategoryID, a.ModelID, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy, a.OrganizationID,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
@@ -271,7 +448,7 @@ func (r *Repository) GetAsset(ctx context.Context, id int64) (*models.Asset, err
 	a := &models.Asset{}
 	err := r.db.QueryRow(ctx,
 		`SELECT `+assetCols+` FROM assets WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt)
+	).Scan(&a.ID, &a.Name, &a.Type, &a.TypeID, &a.CategoryID, &a.ModelID, &a.Serial, &a.Status, &a.Location, &a.AssignedTo, &a.CreatedBy, &a.UpdatedBy, &a.DeletedBy, &a.OrganizationID, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("asset not found")
 	}
@@ -280,8 +457,8 @@ func (r *Repository) GetAsset(ctx context.Context, id int64) (*models.Asset, err
 
 func (r *Repository) UpdateAsset(ctx context.Context, a *models.Asset, userID int64) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE assets SET name=$1, type=$2, type_id=$3, category_id=$4, serial=$5, status=$6, location=$7, assigned_to=$8, organization_id=$9, updated_at=NOW(), updated_by=$10 WHERE id=$11 AND deleted_at IS NULL`,
-		a.Name, a.Type, a.TypeID, a.CategoryID, a.Serial, a.Status, a.Location, a.AssignedTo, a.OrganizationID, userID, a.ID,
+		`UPDATE assets SET name=$1, type=$2, type_id=$3, category_id=$4, model_id=$5, serial=$6, status=$7, location=$8, assigned_to=$9, organization_id=$10, updated_at=NOW(), updated_by=$11 WHERE id=$12 AND deleted_at IS NULL`,
+		a.Name, a.Type, a.TypeID, a.CategoryID, a.ModelID, a.Serial, a.Status, a.Location, a.AssignedTo, a.OrganizationID, userID, a.ID,
 	)
 	if err != nil {
 		return err
@@ -301,6 +478,88 @@ func (r *Repository) DeleteAsset(ctx context.Context, id, userID int64) error {
 		return fmt.Errorf("asset not found")
 	}
 	return nil
+}
+
+// ─── Asset Models ───────────────────────────────────────────────
+
+func (r *Repository) GetAssetModel(ctx context.Context, id int64) (*models.AssetModel, error) {
+	m := &models.AssetModel{}
+	err := r.db.QueryRow(ctx,
+		`SELECT `+modelCols+` FROM asset_models WHERE id=$1 AND deleted_at IS NULL`, id,
+	).Scan(&m.ID, &m.Name, &m.Manufacturer, &m.PartNumber, &m.CategoryID, &m.TypeID, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("model not found")
+	}
+	return m, nil
+}
+
+func (r *Repository) ListAssetModels(ctx context.Context) ([]models.AssetModel, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+modelCols+` FROM asset_models WHERE deleted_at IS NULL ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	models_ := make([]models.AssetModel, 0)
+	for rows.Next() {
+		var m models.AssetModel
+		if err := rows.Scan(&m.ID, &m.Name, &m.Manufacturer, &m.PartNumber, &m.CategoryID, &m.TypeID, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		models_ = append(models_, m)
+	}
+	return models_, nil
+}
+
+func (r *Repository) CreateAssetModel(ctx context.Context, m *models.AssetModel) error {
+	return r.db.QueryRow(ctx,
+		`INSERT INTO asset_models (name, manufacturer, part_number, category_id, type_id) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at, updated_at`,
+		m.Name, m.Manufacturer, m.PartNumber, m.CategoryID, m.TypeID,
+	).Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
+}
+
+func (r *Repository) UpdateAssetModel(ctx context.Context, m *models.AssetModel) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE asset_models SET name=$1, manufacturer=$2, part_number=$3, category_id=$4, type_id=$5, updated_at=NOW() WHERE id=$6 AND deleted_at IS NULL`,
+		m.Name, m.Manufacturer, m.PartNumber, m.CategoryID, m.TypeID, m.ID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteAssetModel(ctx context.Context, id int64) error {
+	tag, err := r.db.Exec(ctx, `UPDATE asset_models SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("model not found")
+	}
+	return nil
+}
+
+func (r *Repository) BulkCreateAssets(ctx context.Context, assets []models.Asset) ([]models.Asset, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	created := make([]models.Asset, 0, len(assets))
+	for i := range assets {
+		a := &assets[i]
+		err := tx.QueryRow(ctx,
+			`INSERT INTO assets (name, type, type_id, category_id, model_id, serial, status, location, assigned_to, created_by, organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, created_at, updated_at`,
+			a.Name, a.Type, a.TypeID, a.CategoryID, a.ModelID, a.Serial, a.Status, a.Location, a.AssignedTo, a.CreatedBy, a.OrganizationID,
+		).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, *a)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 // ─── Auth / Users ───────────────────────────────────────────────
@@ -624,6 +883,32 @@ func (r *Repository) ListBin(ctx context.Context) ([]BinItem, error) {
 		items = append(items, b)
 	}
 
+	rows6, err := r.db.Query(ctx, `SELECT 'model' as type, id, name, deleted_at FROM asset_models WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows6.Close()
+	for rows6.Next() {
+		var b BinItem
+		if err := rows6.Scan(&b.Type, &b.ID, &b.Title, &b.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, b)
+	}
+
+	rows7, err := r.db.Query(ctx, `SELECT 'ticket_type' as type, id, name, deleted_at FROM ticket_types WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows7.Close()
+	for rows7.Next() {
+		var b BinItem
+		if err := rows7.Scan(&b.Type, &b.ID, &b.Title, &b.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, b)
+	}
+
 	return items, nil
 }
 
@@ -640,6 +925,10 @@ func (r *Repository) RestoreItem(ctx context.Context, itemType string, id int64)
 		table = "asset_types"
 	case "category":
 		table = "asset_categories"
+	case "model":
+		table = "asset_models"
+	case "ticket_type":
+		table = "ticket_types"
 	default:
 		return fmt.Errorf("unknown type: %s", itemType)
 	}
@@ -666,6 +955,10 @@ func (r *Repository) PermanentlyDelete(ctx context.Context, itemType string, id 
 		table = "asset_types"
 	case "category":
 		table = "asset_categories"
+	case "model":
+		table = "asset_models"
+	case "ticket_type":
+		table = "ticket_types"
 	default:
 		return fmt.Errorf("unknown type: %s", itemType)
 	}

@@ -1,11 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Ticket } from '../services/api'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../services/auth'
 
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
+
+const STATUS_COLORS: Record<string, string> = {
+  new: 'bg-gray-100 text-gray-800',
+  open: 'bg-green-100 text-green-800',
+  in_progress: 'bg-blue-100 text-blue-800',
+  pending: 'bg-yellow-100 text-yellow-800',
+  resolved: 'bg-indigo-100 text-indigo-800',
+  closed: 'bg-gray-50 text-gray-400',
+  cancelled: 'bg-red-100 text-red-800',
+}
 
 export default function Tickets() {
   const queryClient = useQueryClient()
@@ -18,11 +29,13 @@ export default function Tickets() {
   const [assetId, setAssetId] = useState<number | ''>('')
   const [priority, setPriority] = useState('medium')
   const [status, setStatus] = useState('open')
+  const [typeId, setTypeId] = useState<number | ''>('')
   const [assetError, setAssetError] = useState(false)
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState<number | ''>('')
   const [holdingFilter, setHoldingFilter] = useState<number | ''>('')
   const [orgFilter, setOrgFilter] = useState<number | ''>('')
   const [page, setPage] = useState(1)
@@ -33,6 +46,7 @@ export default function Tickets() {
   if (search) params.search = search
   if (statusFilter) params.status = statusFilter
   if (priorityFilter) params.priority = priorityFilter
+  if (typeFilter) params.type_id = String(typeFilter)
   if (holdingFilter) params.holding_id = String(holdingFilter)
   if (orgFilter) params.organization_id = String(orgFilter)
 
@@ -40,8 +54,10 @@ export default function Tickets() {
   const { data: assets } = useQuery({ queryKey: ['assets-all'], queryFn: () => api.assets.list({ per_page: '999' }) })
   const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
   const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
+  const { data: ticketTypes } = useQuery({ queryKey: ['ticket-types'], queryFn: api.ticketTypes.list })
 
   const assetMap = new Map(assets?.data?.map(a => [a.id, a]) || [])
+  const typeMap = new Map(ticketTypes?.map(t => [t.id, t.name]) || [])
   const filteredOrgs = holdingFilter ? orgs?.filter(o => o.holding_id === holdingFilter) : orgs
 
   const canEdit = (t: Ticket) => user?.is_superuser || user?.role === 'admin' || t.created_by === user?.id
@@ -66,14 +82,14 @@ export default function Tickets() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  function resetForm() { setShowForm(false); setEditId(null); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false); setPriority('medium'); setStatus('open') }
-  function openEdit(t: Ticket) { setEditId(t.id); setTitle(t.title); setDescription(t.description); setAssetId(t.asset_id || ''); setPriority(t.priority); setStatus(t.status); setShowForm(true) }
+  function resetForm() { setShowForm(false); setEditId(null); setTitle(''); setDescription(''); setAssetId(''); setAssetError(false); setPriority('medium'); setStatus('new'); setTypeId('') }
+  function openEdit(t: Ticket) { setEditId(t.id); setTitle(t.title); setDescription(t.description); setAssetId(t.asset_id || ''); setPriority(t.priority); setStatus(t.status); setTypeId(t.type_id || ''); setShowForm(true) }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!assetId) { setAssetError(true); return }
     setAssetError(false)
-    const body = { title, description, asset_id: assetId, priority } as Partial<Ticket>
+    const body = { title, description, asset_id: assetId, priority, type_id: typeId || null } as Partial<Ticket>
     if (editId) { (body as any).status = status }
     editId ? updateMutation.mutate(body) : createMutation.mutate(body)
   }
@@ -127,6 +143,10 @@ export default function Tickets() {
             <option value="high">High</option>
             <option value="critical">Critical</option>
           </select>
+          <select value={typeId} onChange={e => setTypeId(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="">— No type —</option>
+            {ticketTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
           {editId && (
             <select value={status} onChange={e => setStatus(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
               <option value="open">Open</option>
@@ -154,22 +174,24 @@ export default function Tickets() {
             <option value="">All orgs</option>
             {filteredOrgs?.map(o => <option key={o.id} value={o.id}>{'—'.repeat(o.level)} {o.name}</option>)}
           </select>
-          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select>
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option><option value="cancelled">Cancelled</option></select>
           <select value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All priorities</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select>
+          <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value ? Number(e.target.value) : ''); setPage(1) }} className="border rounded-lg px-3 py-2 text-sm"><option value="">All types</option>{ticketTypes?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <span className="text-xs text-gray-400">{result?.total || 0} tickets</span>
         </div>
 
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
+          <thead className="bg-gray-50"><tr><th className="px-4 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody className="divide-y divide-gray-200">
             {tickets.map(ticket => {
               const asset = ticket.asset_id ? assetMap.get(ticket.asset_id) : null
               return (
                 <tr key={ticket.id} className={selected.has(ticket.id) ? 'bg-indigo-50/50' : ''}>
                   <td className="px-4 py-4"><input type="checkbox" checked={selected.has(ticket.id)} onChange={() => toggleSelect(ticket.id)} className="rounded" /></td>
-                  <td className="px-4 py-4 text-sm text-gray-900">{ticket.title}</td>
+                  <td className="px-4 py-4 text-sm"><Link to={`/tickets/${ticket.id}`} className="text-indigo-600 hover:text-indigo-800 font-medium">{ticket.title}</Link></td>
+                  <td className="px-4 py-4 text-sm text-gray-500">{ticket.type_id ? (typeMap.get(ticket.type_id) || '—') : '—'}</td>
                   <td className="px-4 py-4 text-sm text-gray-500">{asset ? `${asset.name} (${asset.serial || asset.type})` : '—'}</td>
-                  <td className="px-4 py-4"><span className={`inline-flex px-2 py-1 text-xs rounded-full ${ticket.status === 'open' ? 'bg-green-100 text-green-800' : ticket.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{ticket.status}</span></td>
+                  <td className="px-4 py-4"><span className={`inline-flex px-2 py-1 text-xs rounded-full ${STATUS_COLORS[ticket.status] || 'bg-gray-100 text-gray-800'}`}>{ticket.status}</span></td>
                   <td className="px-4 py-4 text-sm text-gray-900">{ticket.priority}</td>
                   <td className="px-4 py-4 text-sm space-x-2">
                     {canEdit(ticket) && <button onClick={() => openEdit(ticket)} className="text-indigo-600 hover:text-indigo-800">Edit</button>}

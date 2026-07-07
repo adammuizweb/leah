@@ -42,9 +42,53 @@ export interface Ticket {
   updated_by?: number | null
   deleted_by?: number | null
   asset_id?: number | null
+  organization_id?: number | null
+  type_id?: number | null
+  sla_policy_id?: number | null
+  sla_response_at?: string | null
+  sla_resolve_at?: string | null
+  closed_at?: string | null
   created_at: string
   updated_at: string
   deleted_at?: string | null
+}
+
+export interface TicketType {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface TicketComment {
+  id: number
+  ticket_id: number
+  user_id: number
+  content: string
+  is_internal: boolean
+  created_at: string
+  user_name?: string
+  user_email?: string
+}
+
+export interface TicketStatusHistory {
+  id: number
+  ticket_id: number
+  from_status?: string | null
+  to_status: string
+  changed_by: number
+  note?: string | null
+  created_at: string
+  changed_by_name?: string
+  changed_by_email?: string
+}
+
+export interface SLAPolicy {
+  id: number
+  name: string
+  priority: string
+  response_hours: number
+  resolve_hours: number
+  created_at: string
 }
 
 export interface Role {
@@ -108,12 +152,24 @@ export interface AssetCategory {
   created_at: string
 }
 
+export interface AssetModel {
+  id: number
+  name: string
+  manufacturer: string
+  part_number: string
+  category_id?: number | null
+  type_id?: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Asset {
   id: number
   name: string
   type: string
   type_id?: number | null
   category_id?: number | null
+  model_id?: number | null
   serial: string
   status: string
   location: string
@@ -221,6 +277,33 @@ export const api = {
       request<Ticket>(`/tickets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/tickets/${id}`, { method: 'DELETE' }),
+    updateStatus: (id: number, status: string, note?: string) =>
+      request<Ticket>(`/tickets/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
+    history: (id: number) =>
+      request<TicketStatusHistory[]>(`/tickets/${id}/history`),
+    comments: {
+      list: (id: number) => request<TicketComment[]>(`/tickets/${id}/comments`),
+      create: (id: number, data: { content: string; is_internal: boolean }) =>
+        request<TicketComment>(`/tickets/${id}/comments`, { method: 'POST', body: JSON.stringify(data) }),
+      delete: (id: number, cid: number) =>
+        request<void>(`/tickets/${id}/comments/${cid}`, { method: 'DELETE' }),
+    },
+  },
+
+  ticketTypes: {
+    list: () => request<TicketType[]>('/ticket-types'),
+    create: (name: string) => request<TicketType>('/ticket-types', { method: 'POST', body: JSON.stringify({ name }) }),
+    update: (id: number, name: string) => request<TicketType>(`/ticket-types/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+    delete: (id: number) => request<void>(`/ticket-types/${id}`, { method: 'DELETE' }),
+  },
+
+  slaPolicies: {
+    list: () => request<SLAPolicy[]>('/sla-policies'),
+    create: (data: { name: string; priority: string; response_hours: number; resolve_hours: number }) =>
+      request<SLAPolicy>('/sla-policies', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { name: string; priority: string; response_hours: number; resolve_hours: number }) =>
+      request<SLAPolicy>(`/sla-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: number) => request<void>(`/sla-policies/${id}`, { method: 'DELETE' }),
   },
 
   assets: {
@@ -235,5 +318,16 @@ export const api = {
       request<Asset>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/assets/${id}`, { method: 'DELETE' }),
+    bulk: (data: { model_id: number; quantity: number; serial_numbers?: string[]; serial_prefix?: string; status?: string; organization_id?: number | null }) =>
+      request<{ created: number; assets: Asset[] }>('/assets/bulk', { method: 'POST', body: JSON.stringify(data) }),
+  },
+
+  assetModels: {
+    list: () => request<AssetModel[]>('/asset-models'),
+    create: (data: { name: string; manufacturer: string; part_number: string; category_id?: number | null; type_id?: number | null }) =>
+      request<AssetModel>('/asset-models', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { name: string; manufacturer: string; part_number: string; category_id?: number | null; type_id?: number | null }) =>
+      request<AssetModel>(`/asset-models/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: number) => request<void>(`/asset-models/${id}`, { method: 'DELETE' }),
   },
 }

@@ -8,6 +8,9 @@ const modules = [
   { to: '/admin/organizations', icon: '🏗️', label: 'Organizations', perm: 'settings.read' },
   { to: '/admin/types', icon: '📋', label: 'Asset Types', perm: 'types.read' },
   { to: '/admin/categories', icon: '📂', label: 'Categories', perm: 'categories.read' },
+  { to: '/admin/models', icon: '📦', label: 'Asset Models', perm: 'models.read' },
+  { to: '/admin/ticket-types', icon: '🏷️', label: 'Ticket Types', perm: 'ticket_types.read' },
+  { to: '/admin/sla-policies', icon: '⏱️', label: 'SLA Policies', perm: 'sla_policies.read' },
   { to: '/admin/bin', icon: '🗑️', label: 'Bin', perm: 'settings.read' },
 ]
 

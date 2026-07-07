@@ -4,6 +4,12 @@ const posts = [
   { slug: 'getting-started', title: 'Getting Started with LEAH', desc: 'Cara cepat install dan konfigurasi LEAH di server Anda.', date: '2026-06-30' },
   { slug: 'architecture-overview', title: 'Architecture Overview', desc: 'Bagaimana LEAH dibangun — Go backend, React frontend, PostgreSQL.', date: '2026-06-29' },
   { slug: 'role-permissions', title: 'Role & Permission System', desc: 'Memahami hierarki superuser, admin, dan permission granular.', date: '2026-06-28' },
+  { slug: 'asset-models-bulk', title: 'Asset Models & Bulk Create', desc: 'Buat banyak aset sekaligus dengan model template — solusi untuk barang repetitif seperti router, AP, atau obeng.', date: '2026-07-07' },
+  { slug: 'holding-organization', title: 'Holding & Organization — Multi-Tenant Architecture', desc: 'Memahami struktur holding dan organisasi, scope multi-tenant, dan best practice distribusi aset.', date: '2026-07-07' },
+  { slug: 'ticket-workflow', title: 'Ticket Workflow System — Status, History, Comments & SLA', desc: 'Implementasi workflow ticketing dengan status transisi, history log, comments, dan SLA-based deadline tracking.', date: '2026-07-07' },
+  { slug: 'asset-management', title: 'Asset Management — Full Lifecycle', desc: 'Dari asset types, categories, models, hingga individual assets. CRUD, filter, search, bulk create, dan soft delete.', date: '2026-07-07' },
+  { slug: 'soft-delete-bin', title: 'Soft Delete & Bin System — Data Recovery', desc: 'Bagaimana LEAH menangani penghapusan data: soft delete, restore, permanent delete, dan recovery workflow.', date: '2026-07-07' },
+  { slug: 'user-management', title: 'User Management — CRUD, Roles & Multi-Org Access', desc: 'Membuat dan mengelola user, assignment role, multi-organisasi access, dan security best practices.', date: '2026-07-07' },
 ]
 
 export default function Blog() {

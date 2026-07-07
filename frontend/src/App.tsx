@@ -9,6 +9,7 @@ import AppShell from './pages/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
+import TicketDetail from './pages/TicketDetail'
 import Assets from './pages/Assets'
 import Admin from './pages/Admin'
 import AdminUsers from './pages/AdminUsers'
@@ -17,6 +18,9 @@ import AdminTypes from './pages/AdminTypes'
 import AdminCategories from './pages/AdminCategories'
 import AdminHoldings from './pages/AdminHoldings'
 import AdminOrganizations from './pages/AdminOrganizations'
+import AdminModels from './pages/AdminModels'
+import AdminTicketTypes from './pages/AdminTicketTypes'
+import AdminSLAPolicies from './pages/AdminSLAPolicies'
 import AdminBin from './pages/AdminBin'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -46,12 +50,16 @@ function App() {
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />
+          <Route path="/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
           <Route path="/assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>}>
             <Route path="users" element={<AdminUsers />} />
             <Route path="permissions" element={<AdminPermissions />} />
             <Route path="types" element={<AdminTypes />} />
             <Route path="categories" element={<AdminCategories />} />
+            <Route path="models" element={<AdminModels />} />
+            <Route path="ticket-types" element={<AdminTicketTypes />} />
+            <Route path="sla-policies" element={<AdminSLAPolicies />} />
             <Route path="holdings" element={<AdminHoldings />} />
             <Route path="organizations" element={<AdminOrganizations />} />
             <Route path="bin" element={<AdminBin />} />

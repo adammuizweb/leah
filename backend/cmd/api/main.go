@@ -65,12 +65,18 @@ func main() {
 				r.With(leahmw.RequirePermission("tickets.create")).Post("/", h.CreateTicket)
 				r.With(leahmw.RequirePermission("tickets.read")).Get("/{id}", h.GetTicket)
 				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}", h.UpdateTicket)
+				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}/status", h.UpdateTicketStatus)
 				r.With(leahmw.RequirePermission("tickets.delete")).Delete("/{id}", h.DeleteTicket)
+				r.With(leahmw.RequirePermission("tickets.read")).Get("/{id}/history", h.GetTicketHistory)
+				r.With(leahmw.RequirePermission("tickets.comment")).Get("/{id}/comments", h.ListTicketComments)
+				r.With(leahmw.RequirePermission("tickets.comment")).Post("/{id}/comments", h.CreateTicketComment)
+				r.With(leahmw.RequirePermission("tickets.delete")).Delete("/{id}/comments/{cid}", h.DeleteTicketComment)
 			})
 
 			r.Route("/assets", func(r chi.Router) {
 				r.With(leahmw.RequirePermission("assets.read")).Get("/", h.ListAssets)
 				r.With(leahmw.RequirePermission("assets.create")).Post("/", h.CreateAsset)
+				r.With(leahmw.RequirePermission("assets.create")).Post("/bulk", h.BulkCreateAssets)
 				r.With(leahmw.RequirePermission("assets.read")).Get("/{id}", h.GetAsset)
 				r.With(leahmw.RequirePermission("assets.update")).Put("/{id}", h.UpdateAsset)
 				r.With(leahmw.RequirePermission("assets.delete")).Delete("/{id}", h.DeleteAsset)
@@ -120,6 +126,30 @@ func main() {
 				r.With(leahmw.RequirePermission("categories.create")).Post("/", h.CreateAssetCategory)
 				r.With(leahmw.RequirePermission("categories.update")).Put("/{id}", h.UpdateAssetCategory)
 				r.With(leahmw.RequirePermission("categories.delete")).Delete("/{id}", h.DeleteAssetCategory)
+			})
+
+			// Ticket Types
+			r.Route("/ticket-types", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("ticket_types.read")).Get("/", h.ListTicketTypes)
+				r.With(leahmw.RequirePermission("ticket_types.create")).Post("/", h.CreateTicketType)
+				r.With(leahmw.RequirePermission("ticket_types.update")).Put("/{id}", h.UpdateTicketType)
+				r.With(leahmw.RequirePermission("ticket_types.delete")).Delete("/{id}", h.DeleteTicketType)
+			})
+
+			// SLA Policies
+			r.Route("/sla-policies", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("sla_policies.read")).Get("/", h.ListSLAPolicies)
+				r.With(leahmw.RequirePermission("sla_policies.create")).Post("/", h.CreateSLAPolicy)
+				r.With(leahmw.RequirePermission("sla_policies.update")).Put("/{id}", h.UpdateSLAPolicy)
+				r.With(leahmw.RequirePermission("sla_policies.delete")).Delete("/{id}", h.DeleteSLAPolicy)
+			})
+
+			// Asset Models
+			r.Route("/asset-models", func(r chi.Router) {
+				r.With(leahmw.RequirePermission("models.read")).Get("/", h.ListAssetModels)
+				r.With(leahmw.RequirePermission("models.create")).Post("/", h.CreateAssetModel)
+				r.With(leahmw.RequirePermission("models.update")).Put("/{id}", h.UpdateAssetModel)
+				r.With(leahmw.RequirePermission("models.delete")).Delete("/{id}", h.DeleteAssetModel)
 			})
 
 			// Admin: Bin
