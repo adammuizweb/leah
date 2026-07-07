@@ -28,7 +28,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuth()
   if (!token) return <Navigate to="/login" replace />
-  if (user?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.is_superuser
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 

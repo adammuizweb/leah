@@ -17,7 +17,7 @@ export default function AppShell() {
                 <Link to="/dashboard" className="text-gray-600 hover:text-gray-900">Dashboard</Link>
                 <Link to="/tickets" className="text-gray-600 hover:text-gray-900">Tickets</Link>
                 <Link to="/assets" className="text-gray-600 hover:text-gray-900">Assets</Link>
-                {(user?.role === 'admin' || permissions.includes('settings.read')) && <Link to="/admin" className="text-gray-600 hover:text-indigo-600 font-medium">Admin</Link>}
+                {(user?.role === 'admin' || user?.role === 'superadmin' || user?.is_superuser || permissions.includes('settings.read')) && <Link to="/admin" className="text-gray-600 hover:text-indigo-600 font-medium">Admin</Link>}
               </div>
             </div>
             {user && (
