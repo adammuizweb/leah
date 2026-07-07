@@ -38,9 +38,7 @@ export default function AppShell() {
         {/* Logo */}
         <div className={`h-16 flex items-center border-b border-gray-100 relative ${sidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
           <Link to={isUser ? '/my' : '/dashboard'} className={`flex items-center ${sidebarCollapsed ? '' : 'gap-3'}`}>
-            <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
-              <span className="text-white font-bold text-sm">L</span>
-            </div>
+            <img src="/icons/icon.svg" alt="LEAH" className="w-8 h-8 shrink-0" />
             <span className={`text-lg font-bold text-gray-900 ${sidebarCollapsed ? 'hidden' : ''}`}>LEAH</span>
           </Link>
 
@@ -170,7 +168,6 @@ export default function AppShell() {
                 </span>
               </span>
             ))}
-            {location.pathname === '/dashboard' && <span className="text-gray-900 font-medium">Dashboard</span>}
           </div>
 
           <div className="flex-1" />
