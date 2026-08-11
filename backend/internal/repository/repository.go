@@ -549,7 +549,7 @@ func (r *Repository) DeleteSLAPolicy(ctx context.Context, id int64) error {
 
 // ─── Assets ─────────────────────────────────────────────────────
 
-const assetCols = `id, name, type, type_id, category_id, model_id, serial, status, location, assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
+const assetCols = `id, name, type, type_id, category_id, model_id, COALESCE(serial,''), status, COALESCE(location,''), assigned_to, created_by, updated_by, deleted_by, organization_id, created_at, updated_at`
 
 const modelCols = `id, name, manufacturer, part_number, category_id, type_id, created_at, updated_at`
 

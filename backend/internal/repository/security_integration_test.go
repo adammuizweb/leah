@@ -36,10 +36,11 @@ func TestLoginSecurityRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = firstUnlock() })
 	if _, _, err := repo.CountIPLoginFailures(firstCtx, "192.0.2.60", time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.GetUserByEmail(firstCtx, "root@leah.lan"); err != nil {
+	if _, err := repo.GetUserByEmail(firstCtx, "superuser@leah.lan"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := repo.AcquireLoginLock(context.Background(), "192.0.2.60", "lock-test@example.test"); !errors.Is(err, ErrLoginLockBusy) {
