@@ -49,6 +49,11 @@ jobs:
         env:
           LEAH_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/leah_test?sslmode=disable
         run: bash backend/migrations/test_login_security_clean.sh
+      - name: Adopt a post-Root pre-ledger schema
+        env:
+          ADOPT_EXISTING_SCHEMA: '1'
+          DATABASE_OWNER_URL: postgres://postgres:postgres@localhost:5432/leah_test?sslmode=disable
+        run: bash backend/migrations/migrate_schema.sh
       - name: Adopt a pre-ledger schema
         env:
           LEAH_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/leah_adoption_test?sslmode=disable

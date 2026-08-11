@@ -56,7 +56,7 @@ BEGIN
         WHERE to_regclass('public.' || required_name) IS NULL
     ) OR EXISTS (
         SELECT * FROM (VALUES
-            ('users', 'role_id'), ('users', 'is_superuser'),
+            ('users', 'role_id'),
             ('users', 'organization_id'), ('users', 'deleted_at'),
             ('users', 'avatar_url'),
             ('tickets', 'updated_by'), ('tickets', 'deleted_by'),
@@ -75,6 +75,10 @@ BEGIN
         SELECT table_name, column_name
         FROM information_schema.columns
         WHERE table_schema='public'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='users'
+          AND column_name IN ('is_superuser', 'is_root')
     ) OR EXISTS (
         SELECT required_name
         FROM unnest(ARRAY[
