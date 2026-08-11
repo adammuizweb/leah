@@ -1,0 +1,54 @@
+# Go
+backend/leah
+backend/leah.exe
+backend/bin/
+backend/tmp/
+backend/.env
+**/.env
+**/.env.*
+**/*.env
+!**/.env.example
+!**/*.env.example
+backend/uploads/
+uploads/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Build artifacts
+*.tsbuildinfo
+journals/
+test-results/
+playwright-report/
+
+# Secrets, certificates, and local backups
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+*.bak
+*.backup
+.pgpass
+**/.pgpass
+**/.envrc
+**/.npmrc
+**/.direnv/
+coverage/
+*.coverage
+core
+core.*

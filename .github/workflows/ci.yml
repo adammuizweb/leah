@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Prepare PostgreSQL
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "CREATE ROLE leah LOGIN PASSWORD 'leah';"
+          psql -h localhost -U postgres -c "CREATE DATABASE leah_test;"
+          psql -h localhost -U postgres -c "CREATE DATABASE leah_schema_test;"
+          psql -h localhost -U postgres -c "CREATE DATABASE leah_adoption_test;"
+          psql -h localhost -U postgres -c "CREATE DATABASE leah_incomplete_adoption_test;"
+      - name: Replay production schema runner
+        env:
+          DATABASE_OWNER_URL: postgres://postgres:postgres@localhost:5432/leah_schema_test?sslmode=disable
+        run: |
+          bash backend/migrations/migrate_schema.sh
+          bash backend/migrations/migrate_schema.sh
+      - name: Replay login security migrations
+        env:
+          LEAH_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/leah_test?sslmode=disable
+        run: bash backend/migrations/test_login_security_clean.sh
+      - name: Adopt a pre-ledger schema
+        env:
+          LEAH_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/leah_adoption_test?sslmode=disable
+        run: bash backend/migrations/test_schema_adoption.sh
+      - name: Reject an incomplete pre-ledger schema
+        env:
+          LEAH_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/leah_incomplete_adoption_test?sslmode=disable
+        run: bash backend/migrations/test_schema_adoption_rejects_incomplete.sh
+      - name: Test backend
+        env:
+          LEAH_TEST_DATABASE_URL: postgres://leah:leah@localhost:5432/leah_test?sslmode=disable
+        run: go -C backend test -race ./...
+      - name: Build frontend
+        run: npm --prefix frontend ci && npm --prefix frontend run build

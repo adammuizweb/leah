@@ -1,0 +1,22 @@
+[Unit]
+Description=LEAH - List Everything Assets & Helpdesk
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=leah
+Group=leah
+WorkingDirectory=/opt/leah/backend
+ExecStart=/opt/leah/backend/leah
+EnvironmentFile=/etc/leah/leah.env
+Restart=always
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/leah/backend/uploads
+
+[Install]
+WantedBy=multi-user.target
