@@ -114,18 +114,19 @@ func (r *Repository) ticketScopeOrgIDs(ctx context.Context) []int64 {
 		FROM organizations o
 		WHERE o.id=ANY($1)
 		OR EXISTS (
-			SELECT 1 FROM holdings h
-			JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
-			WHERE h.id=o.holding_id AND (
-				it_org.manager_user_id=$2
+			SELECT 1 FROM service_routes route
+			JOIN organizations it_org ON it_org.id=route.provider_organization_id
+			WHERE route.service_key='it_requests' AND route.consumer_holding_id=o.holding_id AND (
+				(it_org.manager_user_id=$2 AND EXISTS (
+					SELECT 1 FROM organizations active_org
+					WHERE active_org.id=ANY($1) AND active_org.holding_id=it_org.holding_id
+					AND active_org.path LIKE it_org.path || '%'
+				))
 				OR ($3 AND EXISTS (
 					SELECT 1 FROM organizations member_org
-					WHERE member_org.holding_id=h.id
+					WHERE member_org.holding_id=it_org.holding_id
 					AND member_org.path LIKE it_org.path || '%'
-					AND member_org.id IN (
-						SELECT organization_id FROM user_organizations WHERE user_id=$2
-						UNION SELECT organization_id FROM users WHERE id=$2 AND organization_id IS NOT NULL
-					)
+					AND member_org.id=ANY($1)
 				))
 			)
 		)
@@ -161,7 +162,7 @@ func (r *Repository) scopedUserExists(ctx context.Context, userID int64) bool {
 			SELECT 1 FROM users u
 			WHERE u.id=$1 AND u.deleted_at IS NULL AND (
 				u.organization_id=ANY($2)
-				OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id=u.id AND uo.organization_id=ANY($2))
+				OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id=u.id AND uo.organization_id=ANY($2) AND uo.is_active)
 			)
 		)
 	`, userID, orgIDs).Scan(&exists)
@@ -180,7 +181,7 @@ func (r *Repository) userBelongsToOrganization(ctx context.Context, userID int64
 				u.organization_id=$2
 				OR EXISTS (
 					SELECT 1 FROM user_organizations uo
-					WHERE uo.user_id=u.id AND uo.organization_id=$2
+					WHERE uo.user_id=u.id AND uo.organization_id=$2 AND uo.is_active
 				)
 			)
 		)
@@ -190,6 +191,39 @@ func (r *Repository) userBelongsToOrganization(ctx context.Context, userID int64
 
 func (r *Repository) UserInScope(ctx context.Context, userID int64) bool {
 	return r.scopedUserExists(ctx, userID)
+}
+
+func (r *Repository) UserHasMembershipOutsideScope(ctx context.Context, userID int64) bool {
+	if isRoot, _ := ctx.Value(middleware.CtxKeyIsRoot).(bool); isRoot {
+		return false
+	}
+	var outside bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM user_organizations
+			WHERE user_id=$1 AND is_active AND organization_id != ALL($2)
+		)
+	`, userID, r.scopeOrgIDs(ctx)).Scan(&outside)
+	return err != nil || outside
+}
+
+func (r *Repository) UserHasSettingsMembership(ctx context.Context, userID int64) (bool, error) {
+	var privileged bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM user_organizations membership
+			JOIN roles role ON role.id=membership.role_id
+			WHERE membership.user_id=$1 AND membership.is_active AND (
+				role.name='superadmin'
+				OR EXISTS (
+					SELECT 1 FROM role_permissions rp
+					JOIN permissions permission ON permission.id=rp.permission_id
+					WHERE rp.role_id=membership.role_id AND permission.module='settings'
+				)
+			)
+		)
+	`, userID).Scan(&privileged)
+	return privileged, err
 }
 
 func (r *Repository) validateOrganizationIDs(ctx context.Context, organizationIDs []int64) error {
@@ -213,7 +247,7 @@ func (r *Repository) validateOrganizationIDs(ctx context.Context, organizationID
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, technology_name, vendor_name, specification, estimated_cost, manager_reviewed_by, manager_reviewed_at, manager_review_note, it_reviewed_by, it_reviewed_at, it_review_note, it_recommendation, it_manager_recommendation, legacy_workflow, created_at, updated_at, COALESCE((SELECT name FROM users WHERE users.id=created_by),''), COALESCE((SELECT name FROM organizations WHERE organizations.id=organization_id),''), COALESCE((SELECT name FROM users WHERE users.id=manager_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=it_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=approved_by),'')`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, requester_membership_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, technology_name, vendor_name, specification, estimated_cost, manager_reviewed_by, manager_reviewed_at, manager_review_note, it_reviewed_by, it_reviewed_at, it_review_note, it_recommendation, it_manager_recommendation, legacy_workflow, created_at, updated_at, COALESCE((SELECT name FROM users WHERE users.id=created_by),''), COALESCE((SELECT name FROM organizations WHERE organizations.id=organization_id),''), COALESCE((SELECT display_title FROM user_organizations WHERE user_organizations.id=requester_membership_id),''), COALESCE((SELECT identity_type FROM user_organizations WHERE user_organizations.id=requester_membership_id),''), COALESCE((SELECT name FROM users WHERE users.id=manager_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=it_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=approved_by),'')`
 
 type TicketFilter struct {
 	Search         string
@@ -296,6 +330,7 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 				JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
 				WHERE request_org.id=t.organization_id AND managed_org.holding_id=request_org.holding_id
 				AND managed_org.manager_user_id=$%d
+				AND request_org.id=ANY($%d)
 				AND managed_org.level=(
 					SELECT MAX(candidate.level) FROM organizations candidate
 					JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
@@ -304,23 +339,25 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 			))
 			OR EXISTS (
 				SELECT 1 FROM organizations request_org
-				JOIN holdings h ON h.id=request_org.holding_id
-				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+				JOIN service_routes route ON route.consumer_holding_id=request_org.holding_id AND route.service_key='it_requests'
+				JOIN organizations it_org ON it_org.id=route.provider_organization_id
 				WHERE request_org.id=t.organization_id AND it_org.manager_user_id=$%d
+				AND EXISTS (
+					SELECT 1 FROM organizations active_org
+					WHERE active_org.id=ANY($%d) AND active_org.holding_id=it_org.holding_id
+					AND active_org.path LIKE it_org.path || '%%'
+				)
 			)
 			OR ($%d AND EXISTS (
 				SELECT 1 FROM organizations request_org
-				JOIN holdings h ON h.id=request_org.holding_id
-				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
-				JOIN organizations member_org ON member_org.holding_id=h.id AND member_org.path LIKE it_org.path || '%%'
-				WHERE request_org.id=t.organization_id AND member_org.id IN (
-					SELECT organization_id FROM user_organizations WHERE user_id=$%d
-					UNION SELECT organization_id FROM users WHERE id=$%d AND organization_id IS NOT NULL
-				)
+				JOIN service_routes route ON route.consumer_holding_id=request_org.holding_id AND route.service_key='it_requests'
+				JOIN organizations it_org ON it_org.id=route.provider_organization_id
+				JOIN organizations member_org ON member_org.holding_id=it_org.holding_id AND member_org.path LIKE it_org.path || '%%'
+				WHERE request_org.id=t.organization_id AND member_org.id=ANY($%d)
 			))
-		)`, aidx, aidx, aidx, aidx+1, aidx, aidx)
-		args = append(args, *f.ParticipantID, contextHasPermission(ctx, "requests.it_review"))
-		aidx += 2
+		)`, aidx, aidx, aidx+2, aidx, aidx+2, aidx+1, aidx+2)
+		args = append(args, *f.ParticipantID, contextHasPermission(ctx, "requests.it_review"), r.scopeOrgIDs(ctx))
+		aidx += 3
 	} else if f.CreatedBy != nil {
 		where += fmt.Sprintf(` AND t.created_by = $%d`, aidx)
 		args = append(args, *f.CreatedBy)
@@ -383,8 +420,8 @@ func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 		}
 	}
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, technology_name, vendor_name, specification, estimated_cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.SoftwareRequestType, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate, t.TechnologyName, t.VendorName, t.Specification, t.EstimatedCost,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, requester_membership_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, technology_name, vendor_name, specification, estimated_cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.RequesterMembershipID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.SoftwareRequestType, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate, t.TechnologyName, t.VendorName, t.Specification, t.EstimatedCost,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -411,7 +448,7 @@ func scanTicket(row ticketScanner, t *models.Ticket) error {
 	return row.Scan(
 		&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority,
 		&t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID,
-		&t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt,
+		&t.OrganizationID, &t.RequesterMembershipID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt,
 		&t.SLAResolveAt, &t.ClosedAt, &t.RequestKind, &t.ApprovalStatus,
 		&t.SoftwareName, &t.SoftwareRequestType, &t.BusinessObjective, &t.TargetUsers, &t.DesiredDueDate,
 		&t.ApprovedBy, &t.ApprovedAt, &t.ApprovalNote,
@@ -419,7 +456,8 @@ func scanTicket(row ticketScanner, t *models.Ticket) error {
 		&t.ManagerReviewedBy, &t.ManagerReviewedAt, &t.ManagerReviewNote,
 		&t.ITReviewedBy, &t.ITReviewedAt, &t.ITReviewNote, &t.ITRecommendation,
 		&t.ITManagerRecommendation, &t.LegacyWorkflow, &t.CreatedAt, &t.UpdatedAt,
-		&t.CreatedByName, &t.OrganizationName, &t.ManagerReviewerName,
+		&t.CreatedByName, &t.OrganizationName, &t.RequesterDisplayTitle,
+		&t.RequesterIdentityType, &t.ManagerReviewerName,
 		&t.ITReviewerName, &t.ITManagerReviewerName,
 	)
 }
@@ -434,58 +472,62 @@ type RequestRoute struct {
 func (r *Repository) ResolveRequestRoute(ctx context.Context, organizationID int64) (*RequestRoute, error) {
 	route := &RequestRoute{}
 	err := r.db.QueryRow(ctx, `
-		SELECT manager.manager_user_id, h.it_organization_id, it_manager.id,
+		SELECT manager.manager_user_id, route.provider_organization_id, it_manager.id,
 			EXISTS (
 				SELECT 1 FROM users reviewer
 				WHERE reviewer.deleted_at IS NULL
 				AND (
 					reviewer.is_root
 					OR EXISTS (
-						SELECT 1 FROM role_permissions rp
-						JOIN permissions p ON p.id=rp.permission_id
-						WHERE rp.role_id=reviewer.role_id AND p.name='requests.it_review'
-					)
-				)
-				AND (
-					reviewer.is_root
-					OR EXISTS (
-						SELECT 1 FROM role_permissions rp
-						JOIN permissions p ON p.id=rp.permission_id
-						WHERE rp.role_id=reviewer.role_id AND p.name IN ('tickets.read','tickets.read.own')
-					)
-				)
-				AND EXISTS (
-					SELECT 1 FROM organizations member_org
-					WHERE member_org.holding_id=h.id
-					AND member_org.path LIKE it_org.path || '%'
-					AND member_org.id IN (
-						SELECT organization_id FROM user_organizations WHERE user_id=reviewer.id
-						UNION SELECT reviewer.organization_id WHERE reviewer.organization_id IS NOT NULL
+						SELECT 1 FROM user_organizations membership
+						JOIN organizations member_org ON member_org.id=membership.organization_id
+						WHERE membership.user_id=reviewer.id AND membership.is_active
+						AND member_org.holding_id=it_org.holding_id
+						AND member_org.path LIKE it_org.path || '%'
+						AND EXISTS (
+							SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id
+							WHERE rp.role_id=membership.role_id AND p.name='requests.it_review'
+						)
+						AND EXISTS (
+							SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id
+							WHERE rp.role_id=membership.role_id AND p.name IN ('tickets.read','tickets.read.own')
+						)
 					)
 				)
 			)
 		FROM organizations request_org
 		JOIN holdings h ON h.id=request_org.holding_id
+		LEFT JOIN service_routes route ON route.consumer_holding_id=h.id AND route.service_key='it_requests'
 		LEFT JOIN LATERAL (
 			SELECT candidate.manager_user_id
 			FROM organizations candidate
 			JOIN users manager_user ON manager_user.id=candidate.manager_user_id AND manager_user.deleted_at IS NULL
 				AND (manager_user.is_root OR EXISTS (
-					SELECT 1 FROM role_permissions rp
+					SELECT 1 FROM user_organizations membership
+					JOIN organizations member_org ON member_org.id=membership.organization_id
+					JOIN role_permissions rp ON rp.role_id=membership.role_id
 					JOIN permissions p ON p.id=rp.permission_id
-					WHERE rp.role_id=manager_user.role_id AND p.name IN ('tickets.read','tickets.read.own')
+					WHERE membership.user_id=manager_user.id AND membership.is_active
+					AND member_org.holding_id=candidate.holding_id
+					AND request_org.path LIKE member_org.path || '%'
+					AND p.name IN ('tickets.read','tickets.read.own')
 				))
 			WHERE candidate.holding_id=request_org.holding_id
 			AND request_org.path LIKE candidate.path || '%'
 			ORDER BY candidate.level DESC
 			LIMIT 1
 		) manager ON TRUE
-		LEFT JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+		LEFT JOIN organizations it_org ON it_org.id=route.provider_organization_id
 		LEFT JOIN users it_manager ON it_manager.id=it_org.manager_user_id AND it_manager.deleted_at IS NULL
 			AND (it_manager.is_root OR EXISTS (
-				SELECT 1 FROM role_permissions rp
+				SELECT 1 FROM user_organizations membership
+				JOIN organizations member_org ON member_org.id=membership.organization_id
+				JOIN role_permissions rp ON rp.role_id=membership.role_id
 				JOIN permissions p ON p.id=rp.permission_id
-				WHERE rp.role_id=it_manager.role_id AND p.name IN ('tickets.read','tickets.read.own')
+				WHERE membership.user_id=it_manager.id AND membership.is_active
+				AND member_org.holding_id=it_org.holding_id
+				AND member_org.path LIKE it_org.path || '%'
+				AND p.name IN ('tickets.read','tickets.read.own')
 			))
 		WHERE request_org.id=$1
 	`, organizationID).Scan(&route.DepartmentManagerID, &route.ITOrganizationID, &route.ITManagerID, &route.HasITReviewer)
@@ -495,23 +537,8 @@ func (r *Repository) ResolveRequestRoute(ctx context.Context, organizationID int
 	return route, nil
 }
 
-func (r *Repository) userInOrganizationTree(ctx context.Context, userID, organizationID int64) bool {
-	var allowed bool
-	err := r.db.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1
-			FROM organizations member_org
-			JOIN organizations target_org ON member_org.holding_id=target_org.holding_id AND member_org.path LIKE target_org.path || '%'
-			WHERE target_org.id=$2 AND member_org.id IN (
-				SELECT organization_id FROM user_organizations WHERE user_id=$1
-				UNION SELECT organization_id FROM users WHERE id=$1 AND organization_id IS NOT NULL
-			)
-		)
-	`, userID, organizationID).Scan(&allowed)
-	return err == nil && allowed
-}
-
 func (r *Repository) CanParticipateInRequest(ctx context.Context, ticketID, userID int64) bool {
+	activeOrganizationIDs := r.scopeOrgIDs(ctx)
 	var allowed bool
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS(
@@ -519,15 +546,21 @@ func (r *Repository) CanParticipateInRequest(ctx context.Context, ticketID, user
 			FROM tickets t
 			JOIN organizations request_org ON request_org.id=t.organization_id
 			JOIN holdings h ON h.id=request_org.holding_id
-			LEFT JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+			LEFT JOIN service_routes route ON route.consumer_holding_id=h.id AND route.service_key='it_requests'
+			LEFT JOIN organizations it_org ON it_org.id=route.provider_organization_id
 			WHERE t.id=$1 AND t.deleted_at IS NULL AND (
 				t.created_by=$2
-				OR it_org.manager_user_id=$2
+				OR (it_org.manager_user_id=$2 AND EXISTS (
+					SELECT 1 FROM organizations active_org
+					WHERE active_org.id=ANY($3) AND active_org.holding_id=it_org.holding_id
+					AND active_org.path LIKE it_org.path || '%'
+				))
 				OR (t.request_kind <> 'support' AND EXISTS (
 					SELECT 1 FROM organizations managed_org
 					JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
 					WHERE managed_org.holding_id=request_org.holding_id
 					AND request_org.path LIKE managed_org.path || '%' AND managed_org.manager_user_id=$2
+					AND request_org.id=ANY($3)
 					AND managed_org.level=(
 						SELECT MAX(candidate.level) FROM organizations candidate
 						JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
@@ -536,24 +569,80 @@ func (r *Repository) CanParticipateInRequest(ctx context.Context, ticketID, user
 				))
 			)
 		)
-	`, ticketID, userID).Scan(&allowed)
+	`, ticketID, userID, activeOrganizationIDs).Scan(&allowed)
 	if err == nil && allowed {
 		return true
 	}
 	return contextHasPermission(ctx, "requests.it_review") && r.CanITReviewRequest(ctx, ticketID, userID)
 }
 
-func (r *Repository) CanITReviewRequest(ctx context.Context, ticketID, userID int64) bool {
+func (r *Repository) organizationTreeAllowed(ctx context.Context, targetOrganizationID *int64) bool {
+	if isRoot, _ := ctx.Value(middleware.CtxKeyIsRoot).(bool); isRoot {
+		return true
+	}
+	if targetOrganizationID == nil {
+		return false
+	}
+	var allowed bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM organizations target_org
+			JOIN organizations active_org ON active_org.holding_id=target_org.holding_id
+				AND active_org.path LIKE target_org.path || '%'
+			WHERE target_org.id=$1 AND active_org.id=ANY($2)
+		)
+	`, *targetOrganizationID, r.scopeOrgIDs(ctx)).Scan(&allowed)
+	return err == nil && allowed
+}
+
+func (r *Repository) CanITReviewRequest(ctx context.Context, ticketID, _ int64) bool {
 	var itOrganizationID *int64
 	err := r.db.QueryRow(ctx, `
 		SELECT it_org.id
 		FROM tickets t
 		JOIN organizations o ON o.id=t.organization_id
 		JOIN holdings h ON h.id=o.holding_id
-		JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+		JOIN service_routes route ON route.consumer_holding_id=h.id AND route.service_key='it_requests'
+		JOIN organizations it_org ON it_org.id=route.provider_organization_id
 		WHERE t.id=$1 AND t.deleted_at IS NULL
 	`, ticketID).Scan(&itOrganizationID)
-	return err == nil && itOrganizationID != nil && r.userInOrganizationTree(ctx, userID, *itOrganizationID)
+	return err == nil && r.organizationTreeAllowed(ctx, itOrganizationID)
+}
+
+func (r *Repository) userCanReceiveProviderTicket(ctx context.Context, ticketID, userID int64) bool {
+	var allowed bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM tickets ticket
+			JOIN organizations request_org ON request_org.id=ticket.organization_id
+			JOIN service_routes route ON route.consumer_holding_id=request_org.holding_id AND route.service_key='it_requests'
+			JOIN organizations provider_org ON provider_org.id=route.provider_organization_id
+			JOIN users assignee ON assignee.id=$2 AND assignee.deleted_at IS NULL
+			JOIN user_organizations membership ON membership.user_id=$2 AND membership.is_active
+			JOIN roles membership_role ON membership_role.id=membership.role_id
+			JOIN organizations member_org ON member_org.id=membership.organization_id
+				AND member_org.holding_id=provider_org.holding_id
+				AND member_org.path LIKE provider_org.path || '%'
+			WHERE ticket.id=$1 AND ticket.deleted_at IS NULL
+			AND (membership_role.name='admin' OR EXISTS (
+				SELECT 1 FROM role_permissions rp JOIN permissions permission ON permission.id=rp.permission_id
+				WHERE rp.role_id=membership.role_id AND permission.name='tickets.update'
+			))
+			AND (membership_role.name='admin' OR EXISTS (
+				SELECT 1 FROM role_permissions rp JOIN permissions permission ON permission.id=rp.permission_id
+				WHERE rp.role_id=membership.role_id AND permission.name IN ('tickets.read','tickets.read.own')
+			))
+			AND (
+				provider_org.manager_user_id=assignee.id
+				OR membership_role.name='admin'
+				OR EXISTS (
+					SELECT 1 FROM role_permissions rp JOIN permissions permission ON permission.id=rp.permission_id
+					WHERE rp.role_id=membership.role_id AND permission.name='requests.it_review'
+				)
+			)
+		)
+	`, ticketID, userID).Scan(&allowed)
+	return err == nil && allowed
 }
 
 func (r *Repository) UpdateDepartmentManagerReview(ctx context.Context, ticketID, actorID int64, decision, note string) error {
@@ -580,6 +669,7 @@ func (r *Repository) UpdateDepartmentManagerReview(ctx context.Context, ticketID
 				JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
 				WHERE request_org.id=t.organization_id AND managed_org.holding_id=request_org.holding_id
 				AND managed_org.manager_user_id=$2
+				AND request_org.id=ANY($5)
 				AND managed_org.level=(
 					SELECT MAX(candidate.level) FROM organizations candidate
 					JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
@@ -587,7 +677,7 @@ func (r *Repository) UpdateDepartmentManagerReview(ctx context.Context, ticketID
 				)
 			)
 		RETURNING status
-	`, nextStatus, actorID, note, ticketID).Scan(&requestStatus)
+	`, nextStatus, actorID, note, ticketID, r.scopeOrgIDs(ctx)).Scan(&requestStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("request is not awaiting this department manager")
@@ -623,14 +713,18 @@ func (r *Repository) UpdateITReview(ctx context.Context, ticketID, actorID int64
 			SELECT 1 FROM organizations request_org
 			JOIN users reviewer ON reviewer.id=$1 AND reviewer.deleted_at IS NULL
 			JOIN holdings h ON h.id=request_org.holding_id
-			JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
-			JOIN organizations member_org ON member_org.holding_id=h.id AND member_org.path LIKE it_org.path || '%'
-			WHERE request_org.id=t.organization_id AND member_org.id IN (
-				SELECT organization_id FROM user_organizations WHERE user_id=$1
-				UNION SELECT organization_id FROM users WHERE id=$1 AND organization_id IS NOT NULL
+			JOIN service_routes route ON route.consumer_holding_id=h.id AND route.service_key='it_requests'
+			JOIN organizations it_org ON it_org.id=route.provider_organization_id
+			JOIN user_organizations membership ON membership.id=$5 AND membership.user_id=$1 AND membership.is_active
+			JOIN organizations member_org ON member_org.id=membership.organization_id
+				AND member_org.holding_id=it_org.holding_id AND member_org.path LIKE it_org.path || '%'
+			WHERE request_org.id=t.organization_id
+			AND EXISTS (
+				SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id
+				WHERE rp.role_id=membership.role_id AND p.name='requests.it_review'
 			)
 		)
-	`, actorID, note, recommendation, ticketID)
+	`, actorID, note, recommendation, ticketID, ctx.Value(middleware.CtxKeyMembershipID))
 	if err != nil {
 		return err
 	}
@@ -664,12 +758,18 @@ func (r *Repository) UpdateITManagerReview(ctx context.Context, ticketID, actorI
 			AND EXISTS (
 				SELECT 1 FROM organizations request_org
 				JOIN holdings h ON h.id=request_org.holding_id
-				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+				JOIN service_routes route ON route.consumer_holding_id=h.id AND route.service_key='it_requests'
+				JOIN organizations it_org ON it_org.id=route.provider_organization_id
 				JOIN users it_manager ON it_manager.id=it_org.manager_user_id AND it_manager.deleted_at IS NULL
 				WHERE request_org.id=t.organization_id AND it_manager.id=$2
+				AND EXISTS (
+					SELECT 1 FROM organizations active_org
+					WHERE active_org.id=ANY($6) AND active_org.holding_id=it_org.holding_id
+					AND active_org.path LIKE it_org.path || '%'
+				)
 			)
 		RETURNING status
-	`, approvalStatus, actorID, note, recommendation, ticketID).Scan(&requestStatus)
+	`, approvalStatus, actorID, note, recommendation, ticketID, r.scopeOrgIDs(ctx)).Scan(&requestStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("request is not awaiting this IT manager")
@@ -724,7 +824,7 @@ func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID 
 	if !r.organizationAllowed(ctx, t.OrganizationID) && !(contextHasPermission(ctx, "requests.it_review") && r.CanITReviewRequest(ctx, t.ID, userID)) {
 		return fmt.Errorf("organization is outside your scope")
 	}
-	if t.AssignedTo != nil && !r.userBelongsToOrganization(ctx, *t.AssignedTo, t.OrganizationID) && !r.CanITReviewRequest(ctx, t.ID, *t.AssignedTo) {
+	if t.AssignedTo != nil && !r.userBelongsToOrganization(ctx, *t.AssignedTo, t.OrganizationID) && !r.userCanReceiveProviderTicket(ctx, t.ID, *t.AssignedTo) {
 		return fmt.Errorf("assignee is outside the ticket organization")
 	}
 	if t.AssetID != nil {
@@ -1260,54 +1360,67 @@ func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, e
 	return u, nil
 }
 
-func (r *Repository) LoadAuthorizationState(ctx context.Context, userID int64) (*middleware.AuthorizationState, error) {
+func (r *Repository) LoadAuthorizationState(ctx context.Context, userID int64, requestedMembershipID *int64) (*middleware.AuthorizationState, error) {
 	state := &middleware.AuthorizationState{}
 	var primaryOrganizationID *int64
+	var globalRole string
 	if err := r.db.QueryRow(ctx, `
 		SELECT u.email, COALESCE(ro.name,''), u.is_root, u.organization_id
 		FROM users u
 		LEFT JOIN roles ro ON ro.id=u.role_id
 		WHERE u.id=$1 AND u.deleted_at IS NULL
-	`, userID).Scan(&state.Email, &state.Role, &state.IsRoot, &primaryOrganizationID); err != nil {
+	`, userID).Scan(&state.Email, &globalRole, &state.IsRoot, &primaryOrganizationID); err != nil {
 		return nil, fmt.Errorf("active user not found")
 	}
-	if primaryOrganizationID != nil {
-		state.OrganizationID = *primaryOrganizationID
+	if state.IsRoot {
+		state.Role = globalRole
+		permissions, err := r.GetUserPermissions(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, permission := range permissions {
+			state.Permissions = append(state.Permissions, permission.Name)
+		}
+		if primaryOrganizationID != nil {
+			state.OrganizationID = *primaryOrganizationID
+		}
+		return state, nil
 	}
 
-	permissions, err := r.GetUserPermissions(ctx, userID)
-	if err != nil {
-		return nil, err
+	query := `SELECT uo.id, o.id, o.path, COALESCE(role.name,''), uo.role_id
+		FROM user_organizations uo
+		JOIN organizations o ON o.id=uo.organization_id
+		LEFT JOIN roles role ON role.id=uo.role_id
+		WHERE uo.user_id=$1 AND uo.is_active`
+	args := []any{userID}
+	if requestedMembershipID != nil {
+		query += ` AND uo.id=$2`
+		args = append(args, *requestedMembershipID)
 	}
-	state.Permissions = make([]string, len(permissions))
-	for i := range permissions {
-		state.Permissions[i] = permissions[i].Name
+	query += ` ORDER BY uo.is_default DESC, uo.id LIMIT 1`
+	var roleID *int64
+	if err := r.db.QueryRow(ctx, query, args...).Scan(
+		&state.MembershipID, &state.OrganizationID, &state.OrgPath, &state.Role, &roleID,
+	); err != nil || roleID == nil {
+		return nil, fmt.Errorf("active membership not found")
 	}
+	state.OrgIDs = []int64{state.OrganizationID}
+	state.OrgPaths = []string{state.OrgPath}
 	rows, err := r.db.Query(ctx, `
-		SELECT o.id, o.path
-		FROM organizations o
-		WHERE o.id IN (
-			SELECT organization_id FROM user_organizations WHERE user_id=$1
-			UNION
-			SELECT organization_id FROM users WHERE id=$1 AND organization_id IS NOT NULL
-		)
-		ORDER BY o.id
-	`, userID)
+		SELECT p.name FROM permissions p
+		JOIN role_permissions rp ON rp.permission_id=p.id
+		WHERE rp.role_id=$1 ORDER BY p.name
+	`, *roleID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var organizationID int64
-		var organizationPath string
-		if err := rows.Scan(&organizationID, &organizationPath); err != nil {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
 			return nil, err
 		}
-		state.OrgIDs = append(state.OrgIDs, organizationID)
-		state.OrgPaths = append(state.OrgPaths, organizationPath)
-		if organizationID == state.OrganizationID {
-			state.OrgPath = organizationPath
-		}
+		state.Permissions = append(state.Permissions, permission)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1341,7 +1454,7 @@ func (r *Repository) ListUsers(ctx context.Context, orgID *int64, holdingID *int
 	query := `SELECT u.id, u.email, u.name, u.password_hash, u.role_id, COALESCE(ro.name,'') as role, u.is_root, u.avatar_url, u.organization_id,
 		ARRAY(SELECT organization_id FROM (
 			SELECT u.organization_id AS organization_id WHERE u.organization_id IS NOT NULL
-			UNION SELECT uo.organization_id FROM user_organizations uo WHERE uo.user_id=u.id
+			UNION SELECT uo.organization_id FROM user_organizations uo WHERE uo.user_id=u.id AND uo.is_active
 		) memberships ORDER BY organization_id),
 		u.created_at, u.deleted_at, u.locked_until
 		FROM users u LEFT JOIN roles ro ON ro.id=u.role_id`
@@ -1352,7 +1465,7 @@ func (r *Repository) ListUsers(ctx context.Context, orgID *int64, holdingID *int
 	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
 		where = append(where, fmt.Sprintf(`(
 			u.organization_id = ANY($%d)
-			OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id=u.id AND uo.organization_id=ANY($%d))
+			OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id=u.id AND uo.organization_id=ANY($%d) AND uo.is_active)
 		)`, aidx, aidx))
 		args = append(args, orgIDs)
 		aidx++
@@ -1454,6 +1567,11 @@ func (r *Repository) UpdateUser(ctx context.Context, u *models.User, organizatio
 			return err
 		}
 	}
+	if u.RoleID != nil {
+		if _, err := tx.Exec(ctx, `UPDATE user_organizations SET role_id=$1 WHERE user_id=$2 AND is_active AND is_default`, u.RoleID, u.ID); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
 }
 
@@ -1470,11 +1588,16 @@ func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, hash stri
 
 func (r *Repository) GetUserOrganizationsWithDetails(ctx context.Context, userID int64) ([]models.UserOrgDetail, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT uo.organization_id, o.name, o.holding_id, h.name
+		`SELECT uo.id, uo.organization_id, o.name, o.holding_id, h.name,
+			uo.role_id, COALESCE(r.name,''), COALESCE(r.label,''), uo.identity_type,
+			uo.display_title, uo.identity_source, uo.external_membership_id,
+			uo.is_active, uo.is_default
 		 FROM user_organizations uo
 		 JOIN organizations o ON o.id = uo.organization_id
 		 JOIN holdings h ON h.id = o.holding_id
-		 WHERE uo.user_id=$1 ORDER BY h.name, o.name`, userID,
+		 LEFT JOIN roles r ON r.id=uo.role_id
+		 WHERE uo.user_id=$1 AND uo.is_active
+		 ORDER BY uo.is_default DESC, h.name, o.name`, userID,
 	)
 	if err != nil {
 		return nil, err
@@ -1483,12 +1606,52 @@ func (r *Repository) GetUserOrganizationsWithDetails(ctx context.Context, userID
 	orgs := make([]models.UserOrgDetail, 0)
 	for rows.Next() {
 		var o models.UserOrgDetail
-		if err := rows.Scan(&o.OrganizationID, &o.OrgName, &o.HoldingID, &o.HoldingName); err != nil {
+		if err := rows.Scan(
+			&o.MembershipID, &o.OrganizationID, &o.OrgName, &o.HoldingID, &o.HoldingName,
+			&o.RoleID, &o.RoleName, &o.RoleLabel, &o.IdentityType, &o.DisplayTitle,
+			&o.IdentitySource, &o.ExternalMembershipID, &o.IsActive, &o.IsDefault,
+		); err != nil {
 			return nil, err
 		}
 		orgs = append(orgs, o)
 	}
 	return orgs, nil
+}
+
+func (r *Repository) ResolveRequesterMembership(ctx context.Context, userID int64, membershipID *int64) (*models.UserOrgDetail, error) {
+	query := `SELECT uo.id, uo.organization_id, o.name, o.holding_id, h.name,
+		uo.role_id, COALESCE(role.name,''), COALESCE(role.label,''), uo.identity_type,
+		uo.display_title, uo.identity_source, uo.external_membership_id,
+		uo.is_active, uo.is_default,
+		(role.name='admin' OR EXISTS (
+			SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id
+			WHERE rp.role_id=uo.role_id AND p.name='tickets.create'
+		))
+		FROM user_organizations uo
+		JOIN organizations o ON o.id=uo.organization_id
+		JOIN holdings h ON h.id=o.holding_id
+		LEFT JOIN roles role ON role.id=uo.role_id
+		WHERE uo.user_id=$1 AND uo.is_active`
+	args := []any{userID}
+	if membershipID != nil {
+		query += ` AND uo.id=$2`
+		args = append(args, *membershipID)
+	}
+	query += ` ORDER BY uo.is_default DESC, uo.id LIMIT 1`
+	membership := &models.UserOrgDetail{}
+	var canCreate bool
+	err := r.db.QueryRow(ctx, query, args...).Scan(
+		&membership.MembershipID, &membership.OrganizationID, &membership.OrgName,
+		&membership.HoldingID, &membership.HoldingName, &membership.RoleID,
+		&membership.RoleName, &membership.RoleLabel, &membership.IdentityType,
+		&membership.DisplayTitle, &membership.IdentitySource,
+		&membership.ExternalMembershipID, &membership.IsActive,
+		&membership.IsDefault, &canCreate,
+	)
+	if err != nil || !canCreate {
+		return nil, fmt.Errorf("active requester membership with create permission not found")
+	}
+	return membership, nil
 }
 
 func (r *Repository) UpdateUserProfile(ctx context.Context, id int64, name string, avatarURL *string) error {
@@ -1506,7 +1669,7 @@ func (r *Repository) UpdateUserProfile(ctx context.Context, id int64, name strin
 }
 
 func (r *Repository) GetUserOrganizationIDs(ctx context.Context, userID int64) ([]int64, error) {
-	rows, err := r.db.Query(ctx, `SELECT organization_id FROM user_organizations WHERE user_id=$1`, userID)
+	rows, err := r.db.Query(ctx, `SELECT organization_id FROM user_organizations WHERE user_id=$1 AND is_active`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1547,12 +1710,80 @@ func (r *Repository) SetUserOrganizations(ctx context.Context, userID int64, org
 	return tx.Commit(ctx)
 }
 
-func replaceUserOrganizations(ctx context.Context, tx pgx.Tx, userID int64, organizationIDs []int64) error {
-	if _, err := tx.Exec(ctx, `DELETE FROM user_organizations WHERE user_id=$1`, userID); err != nil {
+func (r *Repository) SetUserMemberships(ctx context.Context, userID int64, memberships []models.UserMembershipInput) error {
+	if !r.scopedUserExists(ctx, userID) {
+		return fmt.Errorf("user not found")
+	}
+	organizationIDs := make([]int64, len(memberships))
+	for i := range memberships {
+		organizationIDs[i] = memberships[i].OrganizationID
+	}
+	if err := r.validateOrganizationIDs(ctx, organizationIDs); err != nil {
 		return err
 	}
-	for _, organizationID := range organizationIDs {
-		if _, err := tx.Exec(ctx, `INSERT INTO user_organizations (user_id, organization_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, userID, organizationID); err != nil {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE user_organizations SET is_active=false, is_default=false WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
+	defaultIndex := 0
+	for i := range memberships {
+		if memberships[i].IsDefault {
+			defaultIndex = i
+			break
+		}
+	}
+	for i, membership := range memberships {
+		identityType := strings.TrimSpace(membership.IdentityType)
+		if identityType == "" {
+			identityType = "member"
+		}
+		identitySource := strings.TrimSpace(membership.IdentitySource)
+		if identitySource == "" {
+			identitySource = "local"
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO user_organizations (
+				user_id, organization_id, role_id, identity_type, display_title,
+				identity_source, external_membership_id, is_active, is_default
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8)
+			ON CONFLICT (user_id, organization_id) DO UPDATE SET
+				role_id=EXCLUDED.role_id, identity_type=EXCLUDED.identity_type,
+				display_title=EXCLUDED.display_title, identity_source=EXCLUDED.identity_source,
+				external_membership_id=EXCLUDED.external_membership_id,
+				is_active=true, is_default=EXCLUDED.is_default
+		`, userID, membership.OrganizationID, membership.RoleID, identityType,
+			strings.TrimSpace(membership.DisplayTitle), identitySource,
+			membership.ExternalMembershipID, i == defaultIndex); err != nil {
+			return err
+		}
+	}
+	var primaryOrganizationID, primaryRoleID *int64
+	if len(memberships) > 0 {
+		primaryOrganizationID = &memberships[defaultIndex].OrganizationID
+		primaryRoleID = memberships[defaultIndex].RoleID
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET organization_id=$1, role_id=COALESCE($2,role_id) WHERE id=$3`, primaryOrganizationID, primaryRoleID, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func replaceUserOrganizations(ctx context.Context, tx pgx.Tx, userID int64, organizationIDs []int64) error {
+	if _, err := tx.Exec(ctx, `UPDATE user_organizations SET is_active=false, is_default=false WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
+	for index, organizationID := range organizationIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO user_organizations (user_id, organization_id, role_id, is_active, is_default)
+			SELECT $1,$2,role_id,true,$3 FROM users WHERE id=$1
+			ON CONFLICT (user_id, organization_id) DO UPDATE
+			SET is_active=true, is_default=EXCLUDED.is_default,
+				role_id=COALESCE(user_organizations.role_id, EXCLUDED.role_id)
+		`, userID, organizationID, index == 0); err != nil {
 			return err
 		}
 	}
@@ -1932,7 +2163,9 @@ func (r *Repository) UpdateAssetCategory(ctx context.Context, c *models.AssetCat
 }
 
 func (r *Repository) ListHoldings(ctx context.Context) ([]models.Holding, error) {
-	query := `SELECT id, name, slug, it_organization_id, created_at FROM holdings`
+	query := `SELECT holdings.id, holdings.name, holdings.slug, route.provider_organization_id, holdings.created_at
+		FROM holdings
+		LEFT JOIN service_routes route ON route.consumer_holding_id=holdings.id AND route.service_key='it_requests'`
 	args := []any{}
 	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
 		query += ` WHERE EXISTS (SELECT 1 FROM organizations o WHERE o.holding_id=holdings.id AND o.id=ANY($1))`
@@ -1947,7 +2180,7 @@ func (r *Repository) ListHoldings(ctx context.Context) ([]models.Holding, error)
 	hh := make([]models.Holding, 0)
 	for rows.Next() {
 		var h models.Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Slug, &h.ITOrganizationID, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Slug, &h.ServiceProviderOrganizationID, &h.CreatedAt); err != nil {
 			return nil, err
 		}
 		hh = append(hh, h)
@@ -1959,25 +2192,34 @@ func (r *Repository) CreateHolding(ctx context.Context, h *models.Holding) error
 	return r.db.QueryRow(ctx, `INSERT INTO holdings (name, slug) VALUES ($1,$2) RETURNING id, created_at`, h.Name, h.Slug).Scan(&h.ID, &h.CreatedAt)
 }
 
-func (r *Repository) UpdateHoldingITOrganization(ctx context.Context, holdingID int64, organizationID *int64) error {
+func (r *Repository) UpdateHoldingServiceProvider(ctx context.Context, holdingID int64, organizationID *int64) error {
 	if organizationID != nil {
-		organization, err := r.GetOrganization(ctx, *organizationID)
-		if err != nil || organization.HoldingID != holdingID || !r.organizationAllowed(ctx, organizationID) {
-			return fmt.Errorf("IT organization must belong to this holding and your scope")
+		if _, err := r.GetOrganization(ctx, *organizationID); err != nil || !r.organizationAllowed(ctx, organizationID) {
+			return fmt.Errorf("service provider organization is outside your scope")
 		}
 	}
-	query := `UPDATE holdings SET it_organization_id=$1 WHERE id=$2`
-	args := []any{organizationID, holdingID}
+	query := `SELECT EXISTS(SELECT 1 FROM holdings WHERE id=$1)`
+	args := []any{holdingID}
 	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
-		query += ` AND EXISTS (SELECT 1 FROM organizations o WHERE o.holding_id=holdings.id AND o.id=ANY($3))`
+		query = `SELECT EXISTS(SELECT 1 FROM holdings h WHERE h.id=$1 AND EXISTS (SELECT 1 FROM organizations o WHERE o.holding_id=h.id AND o.id=ANY($2)))`
 		args = append(args, organizationIDs)
 	}
-	tag, err := r.db.Exec(ctx, query, args...)
-	if err != nil {
+	var holdingAllowed bool
+	if err := r.db.QueryRow(ctx, query, args...).Scan(&holdingAllowed); err != nil || !holdingAllowed {
+		return fmt.Errorf("consumer holding is outside your scope")
+	}
+	if organizationID == nil {
+		_, err := r.db.Exec(ctx, `DELETE FROM service_routes WHERE service_key='it_requests' AND consumer_holding_id=$1`, holdingID)
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("holding not found")
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO service_routes (service_key, consumer_holding_id, provider_organization_id)
+		VALUES ('it_requests',$1,$2)
+		ON CONFLICT (service_key, consumer_holding_id)
+		DO UPDATE SET provider_organization_id=EXCLUDED.provider_organization_id, updated_at=NOW()
+	`, holdingID, *organizationID)
+	if err != nil {
+		return err
 	}
 	return nil
 }

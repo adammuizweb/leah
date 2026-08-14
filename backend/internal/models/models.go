@@ -3,11 +3,11 @@ package models
 import "time"
 
 type Holding struct {
-	ID               int64     `json:"id"`
-	Name             string    `json:"name"`
-	Slug             string    `json:"slug"`
-	ITOrganizationID *int64    `json:"it_organization_id,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID                            int64     `json:"id"`
+	Name                          string    `json:"name"`
+	Slug                          string    `json:"slug"`
+	ServiceProviderOrganizationID *int64    `json:"service_provider_organization_id,omitempty"`
+	CreatedAt                     time.Time `json:"created_at"`
 }
 
 type Organization struct {
@@ -33,6 +33,7 @@ type Ticket struct {
 	DeletedBy               *int64     `json:"deleted_by,omitempty"`
 	AssetID                 *int64     `json:"asset_id,omitempty"`
 	OrganizationID          *int64     `json:"organization_id,omitempty"`
+	RequesterMembershipID   *int64     `json:"requester_membership_id,omitempty"`
 	TypeID                  *int64     `json:"type_id,omitempty"`
 	SLAPolicyID             *int64     `json:"sla_policy_id,omitempty"`
 	SLAResponseAt           *time.Time `json:"sla_response_at,omitempty"`
@@ -63,6 +64,8 @@ type Ticket struct {
 	LegacyWorkflow          bool       `json:"legacy_workflow,omitempty"`
 	CreatedByName           string     `json:"created_by_name,omitempty"`
 	OrganizationName        string     `json:"organization_name,omitempty"`
+	RequesterDisplayTitle   string     `json:"requester_display_title,omitempty"`
+	RequesterIdentityType   string     `json:"requester_identity_type,omitempty"`
 	ManagerReviewerName     string     `json:"manager_reviewer_name,omitempty"`
 	ITReviewerName          string     `json:"it_reviewer_name,omitempty"`
 	ITManagerReviewerName   string     `json:"it_manager_reviewer_name,omitempty"`
@@ -174,19 +177,21 @@ type Asset struct {
 }
 
 type User struct {
-	ID             int64      `json:"id"`
-	Email          string     `json:"email"`
-	Name           string     `json:"name"`
-	PasswordHash   string     `json:"-"`
-	RoleID         *int64     `json:"role_id"`
-	Role           string     `json:"role"`
-	IsRoot         bool       `json:"is_root"`
-	AvatarURL      *string    `json:"avatar_url,omitempty"`
-	OrganizationID *int64     `json:"organization_id,omitempty"`
-	OrgIDs         []int64    `json:"org_ids,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
-	LockedUntil    *time.Time `json:"-"`
+	ID               int64      `json:"id"`
+	Email            string     `json:"email"`
+	Name             string     `json:"name"`
+	PasswordHash     string     `json:"-"`
+	RoleID           *int64     `json:"role_id"`
+	Role             string     `json:"role"`
+	IsRoot           bool       `json:"is_root"`
+	AvatarURL        *string    `json:"avatar_url,omitempty"`
+	OrganizationID   *int64     `json:"organization_id,omitempty"`
+	OrgIDs           []int64    `json:"org_ids,omitempty"`
+	IdentitySource   string     `json:"identity_source,omitempty"`
+	ExternalPersonID *string    `json:"external_person_id,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
+	LockedUntil      *time.Time `json:"-"`
 }
 
 type UserSecurityView struct {
@@ -195,10 +200,39 @@ type UserSecurityView struct {
 }
 
 type UserOrgDetail struct {
-	OrganizationID int64  `json:"organization_id"`
-	OrgName        string `json:"org_name"`
-	HoldingID      int64  `json:"holding_id"`
-	HoldingName    string `json:"holding_name"`
+	MembershipID         int64   `json:"membership_id"`
+	OrganizationID       int64   `json:"organization_id"`
+	OrgName              string  `json:"org_name"`
+	HoldingID            int64   `json:"holding_id"`
+	HoldingName          string  `json:"holding_name"`
+	RoleID               *int64  `json:"role_id,omitempty"`
+	RoleName             string  `json:"role_name,omitempty"`
+	RoleLabel            string  `json:"role_label,omitempty"`
+	IdentityType         string  `json:"identity_type"`
+	DisplayTitle         string  `json:"display_title,omitempty"`
+	IdentitySource       string  `json:"identity_source"`
+	ExternalMembershipID *string `json:"external_membership_id,omitempty"`
+	IsActive             bool    `json:"is_active"`
+	IsDefault            bool    `json:"is_default"`
+}
+
+type UserMembershipInput struct {
+	OrganizationID       int64   `json:"organization_id"`
+	RoleID               *int64  `json:"role_id"`
+	IdentityType         string  `json:"identity_type"`
+	DisplayTitle         string  `json:"display_title"`
+	IdentitySource       string  `json:"identity_source"`
+	ExternalMembershipID *string `json:"external_membership_id,omitempty"`
+	IsDefault            bool    `json:"is_default"`
+}
+
+type ServiceRoute struct {
+	ID                     int64     `json:"id"`
+	ServiceKey             string    `json:"service_key"`
+	ConsumerHoldingID      int64     `json:"consumer_holding_id"`
+	ProviderOrganizationID int64     `json:"provider_organization_id"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 type Role struct {
@@ -215,9 +249,11 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	Token       string   `json:"token"`
-	User        User     `json:"user"`
-	Permissions []string `json:"permissions"`
+	Token              string          `json:"token"`
+	User               User            `json:"user"`
+	Permissions        []string        `json:"permissions"`
+	Memberships        []UserOrgDetail `json:"memberships"`
+	ActiveMembershipID int64           `json:"active_membership_id"`
 }
 
 type LoginSecuritySettings struct {

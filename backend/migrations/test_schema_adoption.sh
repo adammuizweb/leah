@@ -33,7 +33,7 @@ DATABASE_OWNER_URL="$LEAH_TEST_DATABASE_URL" \
 psql "$LEAH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "
 DO \$\$
 BEGIN
-    IF (SELECT COUNT(*) FROM schema_migrations) <> 20 THEN
+    IF (SELECT COUNT(*) FROM schema_migrations) <> 21 THEN
         RAISE EXCEPTION 'unexpected migration ledger size';
     END IF;
     IF NOT EXISTS (
@@ -67,14 +67,29 @@ BEGIN
     IF to_regclass('request_workflow_history') IS NULL THEN
         RAISE EXCEPTION 'request workflow history is missing';
     END IF;
+    IF to_regclass('service_routes') IS NULL THEN
+        RAISE EXCEPTION 'federated service routing is missing';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='user_organizations' AND column_name='id'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='tickets' AND column_name='requester_membership_id'
+    ) THEN
+        RAISE EXCEPTION 'requester membership schema is missing';
+    END IF;
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name='organizations' AND column_name='manager_user_id'
-    ) OR NOT EXISTS (
+    ) THEN
+        RAISE EXCEPTION 'organization workflow columns are missing';
+    END IF;
+    IF EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name='holdings' AND column_name='it_organization_id'
     ) THEN
-        RAISE EXCEPTION 'organization workflow routing columns are missing';
+        RAISE EXCEPTION 'legacy holding service route column still exists';
     END IF;
 END
 \$\$;"

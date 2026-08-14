@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adammuiz/leah/internal/middleware"
 	"github.com/adammuiz/leah/internal/models"
 	"github.com/adammuiz/leah/internal/repository"
 	"golang.org/x/crypto/bcrypt"
@@ -27,6 +28,10 @@ func ValidatePassword(password string) error {
 type Service struct{ repo *repository.Repository }
 
 func New(repo *repository.Repository) *Service { return &Service{repo: repo} }
+
+func (s *Service) LoadAuthorizationState(ctx context.Context, userID int64, membershipID *int64) (*middleware.AuthorizationState, error) {
+	return s.repo.LoadAuthorizationState(ctx, userID, membershipID)
+}
 
 // Valid status transitions map
 var validTransitions = map[string][]string{
@@ -63,6 +68,22 @@ func (s *Service) ListMyTickets(ctx context.Context, f repository.TicketFilter, 
 func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	if err := prepareNewRequest(t); err != nil {
 		return err
+	}
+	if isRoot, _ := ctx.Value(middleware.CtxKeyIsRoot).(bool); !isRoot {
+		activeMembershipID, _ := ctx.Value(middleware.CtxKeyMembershipID).(int64)
+		if activeMembershipID < 1 {
+			return fmt.Errorf("%w: active membership is required", ErrInvalidRequest)
+		}
+		if t.RequesterMembershipID != nil && *t.RequesterMembershipID != activeMembershipID {
+			return fmt.Errorf("%w: requester membership does not match the active context", ErrInvalidRequest)
+		}
+		t.RequesterMembershipID = &activeMembershipID
+		membership, err := s.repo.ResolveRequesterMembership(ctx, t.CreatedBy, t.RequesterMembershipID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		t.RequesterMembershipID = &membership.MembershipID
+		t.OrganizationID = &membership.OrganizationID
 	}
 	if t.OrganizationID == nil {
 		return fmt.Errorf("%w: organization is required", ErrInvalidRequest)
@@ -143,6 +164,7 @@ func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int
 		t.Status = existing.Status
 	}
 	t.RequestKind = existing.RequestKind
+	t.RequesterMembershipID = existing.RequesterMembershipID
 	t.ApprovalStatus = existing.ApprovalStatus
 	t.SoftwareName = existing.SoftwareName
 	t.SoftwareRequestType = existing.SoftwareRequestType
@@ -413,6 +435,12 @@ func (s *Service) ListUsers(ctx context.Context, orgID, holdingID *int64) ([]mod
 func (s *Service) UserInScope(ctx context.Context, userID int64) bool {
 	return s.repo.UserInScope(ctx, userID)
 }
+func (s *Service) UserHasMembershipOutsideScope(ctx context.Context, userID int64) bool {
+	return s.repo.UserHasMembershipOutsideScope(ctx, userID)
+}
+func (s *Service) UserHasSettingsMembership(ctx context.Context, userID int64) (bool, error) {
+	return s.repo.UserHasSettingsMembership(ctx, userID)
+}
 func (s *Service) RoleHasSettingsAccess(ctx context.Context, roleID int64) (bool, error) {
 	return s.repo.RoleHasSettingsAccess(ctx, roleID)
 }
@@ -456,6 +484,29 @@ func (s *Service) GetUserOrganizationIDs(ctx context.Context, uid int64) ([]int6
 }
 func (s *Service) GetUserOrganizationsWithDetails(ctx context.Context, uid int64) ([]models.UserOrgDetail, error) {
 	return s.repo.GetUserOrganizationsWithDetails(ctx, uid)
+}
+func (s *Service) SetUserMemberships(ctx context.Context, userID int64, memberships []models.UserMembershipInput) error {
+	if len(memberships) == 0 {
+		return fmt.Errorf("at least one membership is required")
+	}
+	defaultCount := 0
+	for i := range memberships {
+		if memberships[i].RoleID == nil {
+			return fmt.Errorf("membership role is required")
+		}
+		if memberships[i].IsDefault {
+			defaultCount++
+		}
+		switch memberships[i].IdentityType {
+		case "", "member", "employee", "lecturer", "student", "contractor", "service_account":
+		default:
+			return fmt.Errorf("invalid identity type")
+		}
+	}
+	if defaultCount != 1 {
+		return fmt.Errorf("exactly one default membership is required")
+	}
+	return s.repo.SetUserMemberships(ctx, userID, memberships)
 }
 func (s *Service) UpdateUserProfile(ctx context.Context, id int64, name string, avatarURL *string) error {
 	return s.repo.UpdateUserProfile(ctx, id, name, avatarURL)
@@ -540,8 +591,8 @@ func (s *Service) ListHoldings(ctx context.Context) ([]models.Holding, error) {
 func (s *Service) CreateHolding(ctx context.Context, h *models.Holding) error {
 	return s.repo.CreateHolding(ctx, h)
 }
-func (s *Service) UpdateHoldingITOrganization(ctx context.Context, holdingID int64, organizationID *int64) error {
-	return s.repo.UpdateHoldingITOrganization(ctx, holdingID, organizationID)
+func (s *Service) UpdateHoldingServiceProvider(ctx context.Context, holdingID int64, organizationID *int64) error {
+	return s.repo.UpdateHoldingServiceProvider(ctx, holdingID, organizationID)
 }
 func (s *Service) GetOrganization(ctx context.Context, id int64) (*models.Organization, error) {
 	return s.repo.GetOrganization(ctx, id)

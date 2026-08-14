@@ -25,6 +25,7 @@ migrations=(
     019_request_workflow.sql
     020_department_it_workflow.sql
     021_software_request_type.sql
+    022_federated_service_routing.sql
 )
 
 psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "

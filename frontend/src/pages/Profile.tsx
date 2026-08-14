@@ -24,7 +24,7 @@ export default function Profile() {
 
   const meQ = useQuery({
     queryKey: ['me'],
-    queryFn: api.me,
+    queryFn: () => api.me(),
   })
 
   const profileMutation = useMutation({

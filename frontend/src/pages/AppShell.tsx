@@ -1,7 +1,9 @@
 import { Link, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../services/auth'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import CreateRequestModal from '../components/CreateRequestModal'
+import { useToast } from '../components/Toast'
 
 const isUserRole = (role?: string, isSuper?: boolean) => role === 'user' && !isSuper
 
@@ -40,7 +42,9 @@ function usePageTitle(pathname: string): string {
 }
 
 export default function AppShell() {
-  const { user, logout, hasPermission } = useAuth()
+  const { user, logout, hasPermission, memberships, activeMembershipId, switchMembership } = useAuth()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -69,6 +73,15 @@ export default function AppShell() {
     if (open) next.set('new', 'request')
     else next.delete('new')
     setSearchParams(next, { replace: true })
+  }
+
+  async function changeMembership(membershipId: number) {
+    try {
+      await switchMembership(membershipId)
+      queryClient.clear()
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Unable to switch membership', 'error')
+    }
   }
 
   return (
@@ -187,6 +200,10 @@ export default function AppShell() {
           </div>
 
           <div className="flex-1" />
+
+          {!user?.is_root && memberships.length > 1 && <select value={activeMembershipId || ''} onChange={event => void changeMembership(Number(event.target.value))} className="select py-1.5 max-w-56 mr-3" aria-label="Active membership">
+            {memberships.map(membership => <option key={membership.membership_id} value={membership.membership_id}>{membership.display_title || membership.role_label || membership.identity_type} - {membership.org_name}</option>)}
+          </select>}
 
           {canCreateRequest && (
             <button onClick={() => setRequestModal(true)} className="btn-primary btn-sm mr-3">

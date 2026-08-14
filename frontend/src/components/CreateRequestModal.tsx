@@ -19,7 +19,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const { hasPermission } = useAuth()
+  const { user, hasPermission, memberships, activeMembershipId } = useAuth()
   const [kind, setKind] = useState<RequestKind | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -42,6 +42,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
     queryFn: () => canReadAllAssets ? api.assets.list({ per_page: '200' }) : api.assets.mine({ per_page: '200' }),
     enabled: open && (canReadAllAssets || canReadOwnAssets),
   })
+  const activeMembership = memberships.find(membership => membership.membership_id === activeMembershipId)
 
   function reset() {
     setKind(null)
@@ -80,11 +81,16 @@ export default function CreateRequestModal({ open, onClose }: Props) {
   function submit(event: React.FormEvent) {
     event.preventDefault()
     if (!kind) return
+    if (!user?.is_root && !activeMembershipId) {
+      toast('Tidak ada membership aktif yang dapat digunakan untuk mengajukan request', 'error')
+      return
+    }
     create.mutate({
       title,
       description,
       priority,
       request_kind: kind,
+      requester_membership_id: activeMembershipId,
       asset_id: assetId || null,
       software_name: kind === 'software' ? softwareName : undefined,
       software_request_type: kind === 'software' ? softwareRequestType || undefined : undefined,
@@ -145,6 +151,12 @@ export default function CreateRequestModal({ open, onClose }: Props) {
             <p className="text-sm font-semibold text-gray-900 mt-0.5">{REQUEST_KIND_LABELS[kind]}</p>
             {kind === 'software' && softwareRequestType && <p className="text-xs text-violet-700 mt-1">{SOFTWARE_REQUEST_TYPE_LABELS[softwareRequestType]}</p>}
           </div>
+          {activeMembership && <div>
+            <label className="label">Ajukan sebagai</label>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-800">{activeMembership.display_title || activeMembership.role_label || activeMembership.identity_type} - {activeMembership.org_name} / {activeMembership.holding_name}</div>
+            <p className="text-xs text-gray-500 mt-1">Organisasi ini menentukan manager yang menyetujui dan identitas Anda pada request.</p>
+          </div>}
+          {!user?.is_root && memberships.length === 0 && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">Akun Anda belum memiliki membership organisasi aktif. Hubungi administrator.</p>}
           <div>
             <label className="label">Apa yang Anda butuhkan?</label>
             <input value={title} onChange={event => setTitle(event.target.value)} className="input" placeholder={kind === 'software' ? softwareRequestType === 'new_app' ? 'Contoh: Aplikasi pengajuan cuti' : 'Contoh: Tambah notifikasi WhatsApp pada aplikasi cuti' : kind === 'technology_review' ? 'Contoh: Review server dari Vendor ABC' : 'Tulis kebutuhan atau masalah secara singkat'} required autoFocus />
@@ -217,7 +229,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
           {kind !== 'support' && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">Setelah dikirim: Manager divisi Anda menyetujui &rarr; staf IT memberi rekomendasi &rarr; Manager IT mengesahkan.</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={close} className="btn-secondary">Batal</button>
-            <button type="submit" className="btn-primary" disabled={create.isPending}>{create.isPending ? 'Mengirim...' : 'Kirim Permintaan'}</button>
+            <button type="submit" className="btn-primary" disabled={create.isPending || (!user?.is_root && !activeMembershipId)}>{create.isPending ? 'Mengirim...' : 'Kirim Permintaan'}</button>
           </div>
         </form>
       )}

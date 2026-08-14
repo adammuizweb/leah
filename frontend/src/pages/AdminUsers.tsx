@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type User } from '../services/api'
+import { api, type User, type UserMembershipInput } from '../services/api'
 import { useState } from 'react'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -9,18 +9,20 @@ import { useAuth } from '../services/auth'
 export default function AdminUsers() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const { user: authUser } = useAuth()
+  const { user: authUser, refreshAuthorization } = useAuth()
   const [form, setForm] = useState({ email: '', name: '', password: '', role_id: '' as number | '' })
   const [editId, setEditId] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null)
   const [selectedOrgs, setSelectedOrgs] = useState<Set<number>>(new Set())
+  const [membershipTarget, setMembershipTarget] = useState<{ id: number; name: string } | null>(null)
+  const [membershipDraft, setMembershipDraft] = useState<Record<number, UserMembershipInput>>({})
 
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users.list() })
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
   const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: api.organizations.list })
   const { data: holdings } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings.list })
-  const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: () => api.me() })
 
   const orgMap = new Map(orgs?.map(o => [o.id, o]) || [])
   const holdingMap = new Map(holdings?.map(h => [h.id, h]) || [])
@@ -36,7 +38,6 @@ export default function AdminUsers() {
   const update = useMutation({
     mutationFn: () => api.users.update(editId!, {
       email: form.email, name: form.name, role_id: form.role_id || null,
-      org_ids: [...selectedOrgs],
     }),
     onSuccess: () => { reset(); toast('User updated', 'success'); queryClient.invalidateQueries({ queryKey: ['users'] }) },
     onError: (e: Error) => toast(e.message, 'error'),
@@ -54,6 +55,19 @@ export default function AdminUsers() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
+  const saveMemberships = useMutation({
+    mutationFn: () => api.users.updateMemberships(membershipTarget!.id, Object.values(membershipDraft)),
+    onSuccess: async () => {
+      toast('Memberships updated', 'success')
+      if (membershipTarget?.id === authUser?.id) await refreshAuthorization(null)
+      setMembershipTarget(null)
+      setMembershipDraft({})
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['user-memberships'] })
+    },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
   function reset() { setForm({ email: '', name: '', password: '', role_id: '' }); setEditId(null); setShowForm(false); setSelectedOrgs(new Set()) }
   function openEdit(u: User) {
     setEditId(u.id); setShowForm(true)
@@ -65,6 +79,59 @@ export default function AdminUsers() {
     const next = new Set(selectedOrgs)
     next.has(oid) ? next.delete(oid) : next.add(oid)
     setSelectedOrgs(next)
+  }
+
+  async function openMemberships(target: User) {
+    try {
+      const memberships = await queryClient.fetchQuery({ queryKey: ['user-memberships', target.id], queryFn: () => api.users.memberships(target.id) })
+      const draft: Record<number, UserMembershipInput> = {}
+      memberships.forEach(membership => {
+        draft[membership.organization_id] = {
+          organization_id: membership.organization_id,
+          role_id: membership.role_id || null,
+          identity_type: membership.identity_type,
+          display_title: membership.display_title || '',
+          identity_source: membership.identity_source || 'local',
+          external_membership_id: membership.external_membership_id || null,
+          is_default: membership.is_default,
+        }
+      })
+      setMembershipDraft(draft)
+      setMembershipTarget({ id: target.id, name: target.name })
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Unable to load memberships', 'error')
+    }
+  }
+
+  function toggleMembership(organizationId: number) {
+    setMembershipDraft(current => {
+      const next = Object.fromEntries(Object.entries(current).map(([key, value]) => [key, { ...value }]))
+      if (next[organizationId]) {
+        delete next[organizationId]
+        const remaining = Object.values(next)
+        if (remaining.length > 0 && !remaining.some(item => item.is_default)) remaining[0].is_default = true
+      } else {
+        next[organizationId] = {
+          organization_id: organizationId,
+          role_id: form.role_id || null,
+          identity_type: 'member',
+          display_title: '',
+          identity_source: 'local',
+          external_membership_id: null,
+          is_default: Object.keys(next).length === 0,
+        }
+      }
+      return next
+    })
+  }
+
+  function updateMembership(organizationId: number, values: Partial<UserMembershipInput>) {
+    setMembershipDraft(current => {
+      const next = Object.fromEntries(Object.entries(current).map(([key, value]) => [key, { ...value }]))
+      if (values.is_default) Object.values(next).forEach(item => { item.is_default = false })
+      next[organizationId] = { ...next[organizationId], ...values }
+      return next
+    })
   }
 
   return (
@@ -79,11 +146,11 @@ export default function AdminUsers() {
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Name" required />
           <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Email" required />
           {!isEditing && <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Password (minimum 12 characters)" minLength={12} required />}
-          <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value ? Number(e.target.value) : '' })} className="w-full border rounded-lg px-3 py-2 text-sm">
+          {!isEditing && <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value ? Number(e.target.value) : '' })} className="w-full border rounded-lg px-3 py-2 text-sm" required>
             <option value="">— Role —</option>
             {roles?.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-          {(
+          </select>}
+          {!isEditing && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Organizations</label>
               <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
@@ -102,12 +169,34 @@ export default function AdminUsers() {
           )}
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={reset} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{isEditing ? 'Update' : 'Create'}</button>
+            <button type="submit" disabled={create.isPending || update.isPending || (!isEditing && (!form.role_id || selectedOrgs.size === 0))} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50">{isEditing ? 'Update' : 'Create'}</button>
           </div>
         </form>
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => deleteTarget && del.mutate(deleteTarget.id)} title="Delete User" message={`Delete "${deleteTarget?.name}"?`} />
+
+      <Modal open={membershipTarget !== null} onClose={() => { setMembershipTarget(null); setMembershipDraft({}) }} title={`Memberships - ${membershipTarget?.name || ''}`} size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">Each membership defines the authority used when this person acts for an organization.</p>
+          <div className="max-h-[60vh] overflow-y-auto space-y-3">
+            {orgs?.map(organization => {
+              const membership = membershipDraft[organization.id]
+              const holding = holdingMap.get(organization.holding_id)
+              return <div key={organization.id} className={`rounded-lg border p-3 ${membership ? 'border-brand-200 bg-brand-50/30' : 'border-gray-200'}`}>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer"><input type="checkbox" checked={!!membership} onChange={() => toggleMembership(organization.id)} className="rounded" />{holding?.name} / {organization.name}</label>
+                {membership && <div className="grid sm:grid-cols-2 gap-3 mt-3 pl-6">
+                  <div><label className="label">Role in this organization</label><select value={membership.role_id || ''} onChange={event => updateMembership(organization.id, { role_id: event.target.value ? Number(event.target.value) : null })} className="select" required><option value="">Select role</option>{roles?.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}</select></div>
+                  <div><label className="label">Identity type</label><select value={membership.identity_type} onChange={event => updateMembership(organization.id, { identity_type: event.target.value as UserMembershipInput['identity_type'] })} className="select"><option value="member">Member</option><option value="employee">Employee</option><option value="lecturer">Lecturer</option><option value="student">Student</option><option value="contractor">Contractor</option><option value="service_account">Service account</option></select></div>
+                  <div><label className="label">Display title</label><input value={membership.display_title} onChange={event => updateMembership(organization.id, { display_title: event.target.value })} className="input" placeholder="e.g. Lecturer, Department Staff" /></div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 self-end pb-2"><input type="radio" name="default-membership" checked={membership.is_default} onChange={() => updateMembership(organization.id, { is_default: true })} />Default login context</label>
+                </div>}
+              </div>
+            })}
+          </div>
+          <div className="flex justify-end gap-3"><button type="button" onClick={() => setMembershipTarget(null)} className="btn-secondary">Cancel</button><button type="button" onClick={() => saveMemberships.mutate()} disabled={saveMemberships.isPending || Object.keys(membershipDraft).length === 0 || Object.values(membershipDraft).some(item => !item.role_id)} className="btn-primary">{saveMemberships.isPending ? 'Saving...' : 'Save Memberships'}</button></div>
+        </div>
+      </Modal>
 
       <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
@@ -128,6 +217,7 @@ export default function AdminUsers() {
                   <td className="px-4 py-3 text-sm">{u.deleted_at ? <span className="text-red-500">Deleted</span> : isLocked ? <span className="text-amber-600">Locked</span> : <span className="text-green-500">Active</span>}</td>
                   <td className="px-4 py-3 text-sm space-x-2">
                     {canManage && <button onClick={() => openEdit(u)} className="text-indigo-600 hover:text-indigo-800" disabled={!!u.deleted_at}>Edit</button>}
+                    {canManage && authUser?.is_root && !u.is_root && <button onClick={() => void openMemberships(u)} className="text-violet-600 hover:text-violet-800" disabled={!!u.deleted_at}>Memberships</button>}
                     {isLocked && authUser?.is_root && <button onClick={() => unlock.mutate(u.id)} className="text-amber-600 hover:text-amber-800">Unlock</button>}
                     {!isMe && !u.is_root && <button onClick={() => setDeleteTarget({ id: u.id, name: u.name })} className="text-red-600 hover:text-red-800">{u.deleted_at ? 'Purge' : 'Delete'}</button>}
                   </td>

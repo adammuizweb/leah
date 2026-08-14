@@ -83,7 +83,7 @@ func TestAuthLoadsCurrentRootAccess(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	r.Header.Set("Authorization", "Bearer "+signed)
 	w := httptest.NewRecorder()
-	load := func(context.Context, int64) (*AuthorizationState, error) {
+	load := func(context.Context, int64, *int64) (*AuthorizationState, error) {
 		return &AuthorizationState{IsRoot: true}, nil
 	}
 	Auth(secret, load)(next).ServeHTTP(w, r)
@@ -101,7 +101,7 @@ func TestAuthRejectsRevokedUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	load := func(context.Context, int64) (*AuthorizationState, error) {
+	load := func(context.Context, int64, *int64) (*AuthorizationState, error) {
 		return nil, errors.New("user deleted")
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -110,6 +110,64 @@ func TestAuthRejectsRevokedUser(t *testing.T) {
 	})
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	r.Header.Set("Authorization", "Bearer "+signed)
+	w := httptest.NewRecorder()
+	Auth(secret, load)(next).ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+}
+
+func TestAuthLoadsRequestedMembership(t *testing.T) {
+	const secret = "test-secret"
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": float64(7)})
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	load := func(_ context.Context, userID int64, membershipID *int64) (*AuthorizationState, error) {
+		if userID != 7 || membershipID == nil || *membershipID != 42 {
+			t.Fatalf("loader arguments = user %d, membership %v", userID, membershipID)
+		}
+		return &AuthorizationState{MembershipID: 42, OrganizationID: 9, Role: "manager"}, nil
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if membershipID, _ := r.Context().Value(CtxKeyMembershipID).(int64); membershipID != 42 {
+			t.Fatalf("context membership = %d, want 42", membershipID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	r.Header.Set("Authorization", "Bearer "+signed)
+	r.Header.Set("X-Membership-ID", "42")
+	w := httptest.NewRecorder()
+	Auth(secret, load)(next).ServeHTTP(w, r)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+}
+
+func TestAuthRejectsInvalidMembershipHeader(t *testing.T) {
+	const secret = "test-secret"
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": float64(7)})
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	load := func(context.Context, int64, *int64) (*AuthorizationState, error) {
+		t.Fatal("authorization loader should not be called")
+		return nil, nil
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("request with invalid membership reached the next handler")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	r.Header.Set("Authorization", "Bearer "+signed)
+	r.Header.Set("X-Membership-ID", "invalid")
 	w := httptest.NewRecorder()
 	Auth(secret, load)(next).ServeHTTP(w, r)
 
@@ -133,7 +191,7 @@ func TestAuthRejectsMissingUserID(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	r.Header.Set("Authorization", "Bearer "+signed)
 	w := httptest.NewRecorder()
-	load := func(context.Context, int64) (*AuthorizationState, error) {
+	load := func(context.Context, int64, *int64) (*AuthorizationState, error) {
 		return &AuthorizationState{}, nil
 	}
 	Auth(secret, load)(next).ServeHTTP(w, r)

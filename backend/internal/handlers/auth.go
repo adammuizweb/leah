@@ -25,6 +25,7 @@ type Claims struct {
 	OrgPath        string   `json:"org_path"`
 	OrgIDs         []int64  `json:"org_ids"`
 	OrgPaths       []string `json:"org_paths"`
+	MembershipID   int64    `json:"membership_id"`
 	jwt.RegisteredClaims
 }
 
@@ -126,69 +127,32 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	perms, err := h.svc.GetUserPermissions(r.Context(), user.ID)
+	authorization, err := h.svc.LoadAuthorizationState(r.Context(), user.ID, nil)
 	if err != nil {
-		respond(w, 500, map[string]string{"error": "internal server error"})
+		respond(w, http.StatusForbidden, map[string]string{"error": "no active membership is available"})
 		return
 	}
-
-	permNames := make([]string, len(perms))
-	for i, p := range perms {
-		permNames[i] = p.Name
-	}
-
-	orgID := int64(0)
-	orgPath := ""
-	if user.OrganizationID != nil {
-		orgID = *user.OrganizationID
-	}
-
-	// Get all organizations this user belongs to
-	orgIDs, err := h.svc.GetUserOrganizationIDs(r.Context(), user.ID)
+	memberships, err := h.svc.GetUserOrganizationsWithDetails(r.Context(), user.ID)
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve organization scope"})
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve memberships"})
 		return
 	}
-	orgIDList := make([]int64, 0)
-	orgPaths := make([]string, 0)
-	seenOrgIDs := make(map[int64]bool)
-	for _, oid := range orgIDs {
-		if seenOrgIDs[oid] {
-			continue
-		}
-		seenOrgIDs[oid] = true
-		orgIDList = append(orgIDList, oid)
-		org, err := h.svc.GetOrganization(r.Context(), oid)
-		if err != nil {
-			respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve organization scope"})
-			return
-		}
-		orgPaths = append(orgPaths, org.Path)
-		if oid == orgID {
-			orgPath = org.Path
-		}
-	}
-	if user.OrganizationID != nil && *user.OrganizationID > 0 && !seenOrgIDs[*user.OrganizationID] {
-		org, err := h.svc.GetOrganization(r.Context(), *user.OrganizationID)
-		if err != nil {
-			respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve organization scope"})
-			return
-		}
-		orgIDList = append(orgIDList, org.ID)
-		orgPaths = append(orgPaths, org.Path)
-		orgPath = org.Path
+	user.Role = authorization.Role
+	if authorization.OrganizationID > 0 {
+		user.OrganizationID = &authorization.OrganizationID
 	}
 
 	claims := Claims{
 		UserID:         user.ID,
 		Email:          user.Email,
 		Role:           user.Role,
-		Permissions:    permNames,
+		Permissions:    authorization.Permissions,
 		IsRoot:         user.IsRoot,
-		OrganizationID: orgID,
-		OrgPath:        orgPath,
-		OrgIDs:         orgIDList,
-		OrgPaths:       orgPaths,
+		OrganizationID: authorization.OrganizationID,
+		OrgPath:        authorization.OrgPath,
+		OrgIDs:         authorization.OrgIDs,
+		OrgPaths:       authorization.OrgPaths,
+		MembershipID:   authorization.MembershipID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -203,9 +167,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, 200, models.AuthResponse{
-		Token:       tokenString,
-		User:        *user,
-		Permissions: permNames,
+		Token:              tokenString,
+		User:               *user,
+		Permissions:        authorization.Permissions,
+		Memberships:        memberships,
+		ActiveMembershipID: authorization.MembershipID,
 	})
 }
 
@@ -308,19 +274,24 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	perms, err := h.svc.GetUserPermissions(r.Context(), userID)
+	permissions, _ := r.Context().Value(middleware.CtxKeyPermissions).([]string)
+	role, _ := r.Context().Value(middleware.CtxKeyUserRole).(string)
+	organizationID, _ := r.Context().Value(middleware.CtxKeyOrgID).(int64)
+	membershipID, _ := r.Context().Value(middleware.CtxKeyMembershipID).(int64)
+	user.Role = role
+	if organizationID > 0 {
+		user.OrganizationID = &organizationID
+	}
+	memberships, err := h.svc.GetUserOrganizationsWithDetails(r.Context(), userID)
 	if err != nil {
-		respond(w, 500, map[string]string{"error": "internal server error"})
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve memberships"})
 		return
 	}
 
-	permNames := make([]string, len(perms))
-	for i, p := range perms {
-		permNames[i] = p.Name
-	}
-
 	respond(w, 200, map[string]any{
-		"user":        user,
-		"permissions": permNames,
+		"user":                 user,
+		"permissions":          permissions,
+		"memberships":          memberships,
+		"active_membership_id": membershipID,
 	})
 }

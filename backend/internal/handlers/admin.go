@@ -75,6 +75,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if req.RoleID == nil || len(req.OrgIDs) == 0 {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "role and at least one organization are required"})
+		return
+	}
 	if !h.canAssignRole(w, r, req.RoleID) {
 		return
 	}
@@ -115,6 +119,51 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 200, u)
+}
+
+func (h *Handler) ListUserMemberships(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if !h.canManageUser(w, r, id) {
+		return
+	}
+	memberships, err := h.svc.GetUserOrganizationsWithDetails(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, memberships)
+}
+
+func (h *Handler) UpdateUserMemberships(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if !h.canManageUser(w, r, id) {
+		return
+	}
+	var request struct {
+		Memberships []models.UserMembershipInput `json:"memberships"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	for i := range request.Memberships {
+		if !h.canAssignRole(w, r, request.Memberships[i].RoleID) {
+			return
+		}
+	}
+	if err := h.svc.SetUserMemberships(r.Context(), id, request.Memberships); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) UpdateUserPassword(w http.ResponseWriter, r *http.Request) {
@@ -175,8 +224,12 @@ func (h *Handler) canManageUser(w http.ResponseWriter, r *http.Request, id int64
 		respond(w, http.StatusForbidden, map[string]string{"error": "root access required"})
 		return false
 	}
-	if !requestIsRoot(r) && !requestHasPermission(r, "settings.update") && target.RoleID != nil {
-		privileged, err := h.svc.RoleHasSettingsAccess(r.Context(), *target.RoleID)
+	if !requestIsRoot(r) && h.svc.UserHasMembershipOutsideScope(r.Context(), id) {
+		respond(w, http.StatusForbidden, map[string]string{"error": "root access required to manage an account shared across organization scopes"})
+		return false
+	}
+	if !requestIsRoot(r) && !requestHasPermission(r, "settings.update") {
+		privileged, err := h.svc.UserHasSettingsMembership(r.Context(), id)
 		if err != nil {
 			respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to validate role"})
 			return false
@@ -378,20 +431,20 @@ func (h *Handler) CreateHolding(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, hh)
 }
 
-func (h *Handler) UpdateHoldingITOrganization(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateHoldingServiceProvider(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
 	var body struct {
-		ITOrganizationID *int64 `json:"it_organization_id"`
+		ProviderOrganizationID *int64 `json:"provider_organization_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if err := h.svc.UpdateHoldingITOrganization(r.Context(), id, body.ITOrganizationID); err != nil {
+	if err := h.svc.UpdateHoldingServiceProvider(r.Context(), id, body.ProviderOrganizationID); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

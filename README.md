@@ -18,7 +18,10 @@ protection in a React single-page application backed by a Go API and PostgreSQL.
 - Asset inventory with types, hierarchical categories, reusable models,
   assignment, ticket relationships, and bulk creation.
 - Holdings and hierarchical organizations with scoped data access, inherited
-  department managers, and an explicitly configured IT destination.
+  department managers, and an explicitly configured service provider that may
+  serve consumers in other holdings.
+- Membership-scoped identities and roles, allowing one account to act for
+  different organizations without combining their permissions or data scope.
 - Configurable roles and granular permissions.
 - Soft deletion, restore, and permanent-delete workflows.
 - User profiles and avatar uploads.
@@ -105,6 +108,8 @@ and verify it is at migration 014 before running once with
 > Never run `backend/migrations/003_seed.sql` in production. It contains public
 > development fixtures and known demo credentials. The production runner
 > intentionally excludes it.
+
+For disposable development data on the current schema, run `999_seed.sql`.
 
 ### 4. Bootstrap Root
 

@@ -22,13 +22,21 @@ func TestOrganizationScope(t *testing.T) {
 	).Scan(&holdingID); err != nil {
 		t.Fatal(err)
 	}
+	var providerHoldingID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO holdings (name, slug) VALUES ($1,$2) RETURNING id`,
+		"Provider Scope Test", fmt.Sprintf("provider-scope-test-%d", suffix),
+	).Scan(&providerHoldingID); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM user_organizations WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM service_routes WHERE consumer_holding_id=$1`, holdingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM user_organizations WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id IN ($1,$2))`, holdingID, providerHoldingID)
 		_, _ = pool.Exec(ctx, `DELETE FROM tickets WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
 		_, _ = pool.Exec(ctx, `DELETE FROM assets WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
-		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
-		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE holding_id=$1`, holdingID)
-		_, _ = pool.Exec(ctx, `DELETE FROM holdings WHERE id=$1`, holdingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id IN ($1,$2))`, holdingID, providerHoldingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE holding_id IN ($1,$2)`, holdingID, providerHoldingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM holdings WHERE id IN ($1,$2)`, holdingID, providerHoldingID)
 	})
 
 	createOrganization := func(name string, parentID *int64, path string, level int) int64 {
@@ -46,10 +54,27 @@ func TestOrganizationScope(t *testing.T) {
 	parentID := createOrganization("Scope Parent", nil, "/scope-parent/", 0)
 	childID := createOrganization("Scope Child", &parentID, "/scope-parent/child/", 1)
 	siblingID := createOrganization("Scope Sibling", nil, "/scope-sibling/", 0)
-	itOrganizationID := createOrganization("Scope IT", nil, "/scope-it/", 0)
+	var itOrganizationID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO organizations (name, holding_id, path, level) VALUES ('Scope IT Provider',$1,'/scope-it-provider/',0) RETURNING id`,
+		providerHoldingID,
+	).Scan(&itOrganizationID); err != nil {
+		t.Fatal(err)
+	}
+	var itReviewerOrganizationID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO organizations (name, holding_id, parent_id, path, level) VALUES ('Scope IT Review',$1,$2,'/scope-it-provider/review/',1) RETURNING id`,
+		providerHoldingID, itOrganizationID,
+	).Scan(&itReviewerOrganizationID); err != nil {
+		t.Fatal(err)
+	}
 
 	var roleID int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM roles WHERE name='user'`).Scan(&roleID); err != nil {
+		t.Fatal(err)
+	}
+	var agentRoleID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM roles WHERE name='agent'`).Scan(&agentRoleID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,15 +87,46 @@ func TestOrganizationScope(t *testing.T) {
 		).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := pool.Exec(ctx, `INSERT INTO user_organizations (user_id, organization_id, role_id, is_default) VALUES ($1,$2,$3,true)`, id, organizationID, roleID); err != nil {
+			t.Fatal(err)
+		}
 		return id
 	}
 
 	childUserID := insertUser(fmt.Sprintf("scope-child-%d@example.test", suffix), childID)
 	siblingUserID := insertUser(fmt.Sprintf("scope-sibling-%d@example.test", suffix), siblingID)
 	departmentManagerID := insertUser(fmt.Sprintf("scope-manager-%d@example.test", suffix), parentID)
-	itReviewerID := insertUser(fmt.Sprintf("scope-it-reviewer-%d@example.test", suffix), itOrganizationID)
+	itReviewerID := insertUser(fmt.Sprintf("scope-it-reviewer-%d@example.test", suffix), itReviewerOrganizationID)
 	itManagerID := insertUser(fmt.Sprintf("scope-it-manager-%d@example.test", suffix), itOrganizationID)
+	var secondaryMembershipID int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO user_organizations (user_id, organization_id, role_id, identity_type, display_title)
+		VALUES ($1,$2,$3,'lecturer','Secondary Membership') RETURNING id
+	`, childUserID, siblingID, roleID).Scan(&secondaryMembershipID); err != nil {
+		t.Fatal(err)
+	}
+	defaultState, err := repo.LoadAuthorizationState(ctx, childUserID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defaultState.OrgIDs) != 1 || defaultState.OrganizationID != childID {
+		t.Fatalf("default membership scope = %#v", defaultState.OrgIDs)
+	}
+	secondaryState, err := repo.LoadAuthorizationState(ctx, childUserID, &secondaryMembershipID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondaryState.OrgIDs) != 1 || secondaryState.OrganizationID != siblingID {
+		t.Fatalf("selected membership scope = %#v", secondaryState.OrgIDs)
+	}
+	resolvedMembership, err := repo.ResolveRequesterMembership(ctx, childUserID, &secondaryMembershipID)
+	if err != nil || resolvedMembership.OrganizationID != siblingID {
+		t.Fatalf("resolved requester membership = %#v, error = %v", resolvedMembership, err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE users SET role_id=(SELECT id FROM roles WHERE name='agent') WHERE id=$1`, itReviewerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE user_organizations SET role_id=(SELECT id FROM roles WHERE name='agent') WHERE user_id=$1`, itReviewerID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE organizations SET manager_user_id=$1 WHERE id=$2`, departmentManagerID, parentID); err != nil {
@@ -79,7 +135,7 @@ func TestOrganizationScope(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE organizations SET manager_user_id=$1 WHERE id=$2`, itManagerID, itOrganizationID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE holdings SET it_organization_id=$1 WHERE id=$2`, itOrganizationID, holdingID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO service_routes (service_key, consumer_holding_id, provider_organization_id) VALUES ('it_requests',$1,$2)`, holdingID, itOrganizationID); err != nil {
 		t.Fatal(err)
 	}
 	containsOrganization := func(organizationIDs []int64, wanted int64) bool {
@@ -90,14 +146,14 @@ func TestOrganizationScope(t *testing.T) {
 		}
 		return false
 	}
-	itReviewerState, err := repo.LoadAuthorizationState(ctx, itReviewerID)
+	itReviewerState, err := repo.LoadAuthorizationState(ctx, itReviewerID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if containsOrganization(itReviewerState.OrgIDs, childID) || containsOrganization(itReviewerState.OrgIDs, siblingID) {
 		t.Fatalf("IT reviewer received global organization scope: %#v", itReviewerState.OrgIDs)
 	}
-	itManagerState, err := repo.LoadAuthorizationState(ctx, itManagerID)
+	itManagerState, err := repo.LoadAuthorizationState(ctx, itManagerID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +178,15 @@ func TestOrganizationScope(t *testing.T) {
 
 	scopedCtx := context.WithValue(ctx, middleware.CtxKeyOrgIDs, []int64{parentID})
 	scopedCtx = context.WithValue(scopedCtx, middleware.CtxKeyOrgPaths, []string{"/scope-parent/"})
+	if !repo.UserHasMembershipOutsideScope(scopedCtx, childUserID) {
+		t.Fatal("shared account was not recognized as having an out-of-scope membership")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE user_organizations SET role_id=(SELECT id FROM roles WHERE name='superadmin') WHERE id=$1`, secondaryMembershipID); err != nil {
+		t.Fatal(err)
+	}
+	if privileged, err := repo.UserHasSettingsMembership(ctx, childUserID); err != nil || !privileged {
+		t.Fatalf("privileged membership detection = %v, error = %v", privileged, err)
+	}
 
 	result, err := repo.ListAssets(scopedCtx, AssetFilter{Page: 1, PerPage: 100})
 	if err != nil {
@@ -197,11 +262,53 @@ func TestOrganizationScope(t *testing.T) {
 	if err := repo.CreateTicket(scopedCtx, softwareRequest); err != nil {
 		t.Fatal(err)
 	}
+	if !repo.userCanReceiveProviderTicket(ctx, softwareRequest.ID, itReviewerID) {
+		t.Fatal("provider reviewer was not accepted as an assignee")
+	}
+	if repo.userCanReceiveProviderTicket(ctx, softwareRequest.ID, siblingUserID) {
+		t.Fatal("unrelated user was accepted as a provider assignee")
+	}
+	mixedUserID := insertUser(fmt.Sprintf("scope-mixed-%d@example.test", suffix), siblingID)
+	if _, err := pool.Exec(ctx, `UPDATE user_organizations SET role_id=$1 WHERE user_id=$2 AND is_default`, agentRoleID, mixedUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_organizations (user_id, organization_id, role_id) VALUES ($1,$2,$3)`, mixedUserID, itOrganizationID, roleID); err != nil {
+		t.Fatal(err)
+	}
+	mixedState, err := repo.LoadAuthorizationState(ctx, mixedUserID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixedCtx := context.WithValue(ctx, middleware.CtxKeyUserID, mixedUserID)
+	mixedCtx = context.WithValue(mixedCtx, middleware.CtxKeyUserRole, mixedState.Role)
+	mixedCtx = context.WithValue(mixedCtx, middleware.CtxKeyPermissions, mixedState.Permissions)
+	mixedCtx = context.WithValue(mixedCtx, middleware.CtxKeyOrgIDs, mixedState.OrgIDs)
+	mixedCtx = context.WithValue(mixedCtx, middleware.CtxKeyOrgPaths, mixedState.OrgPaths)
+	mixedTickets, err := repo.ListTickets(mixedCtx, TicketFilter{Page: 1, PerPage: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mixedTickets.Total != 0 {
+		t.Fatalf("permissions from active membership were combined with provider membership: %#v", mixedTickets.Data)
+	}
 	itReviewerCtx := context.WithValue(ctx, middleware.CtxKeyUserID, itReviewerID)
 	itReviewerCtx = context.WithValue(itReviewerCtx, middleware.CtxKeyUserRole, itReviewerState.Role)
 	itReviewerCtx = context.WithValue(itReviewerCtx, middleware.CtxKeyPermissions, itReviewerState.Permissions)
 	itReviewerCtx = context.WithValue(itReviewerCtx, middleware.CtxKeyOrgIDs, itReviewerState.OrgIDs)
 	itReviewerCtx = context.WithValue(itReviewerCtx, middleware.CtxKeyOrgPaths, itReviewerState.OrgPaths)
+	itReviewerCtx = context.WithValue(itReviewerCtx, middleware.CtxKeyMembershipID, itReviewerState.MembershipID)
+	departmentManagerState, err := repo.LoadAuthorizationState(ctx, departmentManagerID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	departmentManagerCtx := context.WithValue(ctx, middleware.CtxKeyUserID, departmentManagerID)
+	departmentManagerCtx = context.WithValue(departmentManagerCtx, middleware.CtxKeyOrgIDs, departmentManagerState.OrgIDs)
+	departmentManagerCtx = context.WithValue(departmentManagerCtx, middleware.CtxKeyOrgPaths, departmentManagerState.OrgPaths)
+	departmentManagerCtx = context.WithValue(departmentManagerCtx, middleware.CtxKeyMembershipID, departmentManagerState.MembershipID)
+	itManagerCtx := context.WithValue(ctx, middleware.CtxKeyUserID, itManagerID)
+	itManagerCtx = context.WithValue(itManagerCtx, middleware.CtxKeyOrgIDs, itManagerState.OrgIDs)
+	itManagerCtx = context.WithValue(itManagerCtx, middleware.CtxKeyOrgPaths, itManagerState.OrgPaths)
+	itManagerCtx = context.WithValue(itManagerCtx, middleware.CtxKeyMembershipID, itManagerState.MembershipID)
 	itTickets, err := repo.ListTickets(itReviewerCtx, TicketFilter{Page: 1, PerPage: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -219,19 +326,19 @@ func TestOrganizationScope(t *testing.T) {
 	if err := repo.UpdateDepartmentManagerReview(scopedCtx, softwareRequest.ID, childUserID, "approved", "Unauthorized approval"); err == nil {
 		t.Fatal("requester approved their own formal request")
 	}
-	if err := repo.UpdateDepartmentManagerReview(scopedCtx, softwareRequest.ID, departmentManagerID, "approved", "Department approved"); err != nil {
+	if err := repo.UpdateDepartmentManagerReview(departmentManagerCtx, softwareRequest.ID, departmentManagerID, "approved", "Department approved"); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.UpdateITReview(scopedCtx, softwareRequest.ID, siblingUserID, "recommended", "Unauthorized recommendation"); err == nil {
 		t.Fatal("user outside the IT organization reviewed a request")
 	}
-	if err := repo.UpdateITReview(scopedCtx, softwareRequest.ID, itReviewerID, "recommended", "Architecture is suitable"); err != nil {
+	if err := repo.UpdateITReview(itReviewerCtx, softwareRequest.ID, itReviewerID, "recommended", "Architecture is suitable"); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.UpdateITManagerReview(scopedCtx, softwareRequest.ID, itReviewerID, "recommended", "Unauthorized sign-off"); err == nil {
 		t.Fatal("IT reviewer completed the IT manager sign-off")
 	}
-	if err := repo.UpdateITManagerReview(scopedCtx, softwareRequest.ID, itManagerID, "recommended", "IT recommendation confirmed"); err != nil {
+	if err := repo.UpdateITManagerReview(itManagerCtx, softwareRequest.ID, itManagerID, "recommended", "IT recommendation confirmed"); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := repo.GetTicket(scopedCtx, softwareRequest.ID)
@@ -290,7 +397,7 @@ func TestOrganizationScope(t *testing.T) {
 	if err := repo.CreateTicket(scopedCtx, &rejectedRequest); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdateDepartmentManagerReview(scopedCtx, rejectedRequest.ID, departmentManagerID, "rejected", "Not aligned with current priorities"); err != nil {
+	if err := repo.UpdateDepartmentManagerReview(departmentManagerCtx, rejectedRequest.ID, departmentManagerID, "rejected", "Not aligned with current priorities"); err != nil {
 		t.Fatal(err)
 	}
 	rejected, err := repo.GetTicket(scopedCtx, rejectedRequest.ID)

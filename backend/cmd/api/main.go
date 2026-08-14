@@ -107,6 +107,8 @@ func main() {
 				r.With(leahmw.RequirePermission("users.create")).Post("/", h.CreateUser)
 				r.With(leahmw.RequirePermission("users.read")).Get("/{id}", h.GetUser)
 				r.With(leahmw.RequirePermission("users.update")).Put("/{id}", h.UpdateUser)
+				r.With(leahmw.RequireRoot).Get("/{id}/memberships", h.ListUserMemberships)
+				r.With(leahmw.RequireRoot).Put("/{id}/memberships", h.UpdateUserMemberships)
 				r.With(leahmw.RequirePermission("users.update")).Put("/{id}/password", h.UpdateUserPassword)
 				r.With(leahmw.RequireRoot).Post("/{id}/unlock", h.UnlockUser)
 				r.With(leahmw.RequirePermission("users.delete")).Delete("/{id}", h.SoftDeleteUser)
@@ -135,7 +137,7 @@ func main() {
 			r.Route("/holdings", func(r chi.Router) {
 				r.Get("/", h.ListHoldings)
 				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateHolding)
-				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}/it-organization", h.UpdateHoldingITOrganization)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}/service-provider", h.UpdateHoldingServiceProvider)
 			})
 			r.Route("/organizations", func(r chi.Router) {
 				r.Get("/", h.ListOrganizations)

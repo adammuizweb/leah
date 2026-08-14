@@ -1,14 +1,21 @@
 const BASE = '/api'
 
 let _token: string | null = null
+let _membershipId: number | null = null
 
 export function setToken(t: string | null) {
   _token = t
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+export function setMembership(id: number | null) {
+  _membershipId = id
+}
+
+async function request<T>(url: string, options?: RequestInit, membershipOverride?: number | null): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (_token) headers['Authorization'] = `Bearer ${_token}`
+  const membershipId = membershipOverride === undefined ? _membershipId : membershipOverride
+  if (membershipId) headers['X-Membership-ID'] = String(membershipId)
 
   const res = await fetch(`${BASE}${url}`, { headers, ...options })
   if (!res.ok) {
@@ -46,6 +53,7 @@ export interface Ticket {
   deleted_by?: number | null
   asset_id?: number | null
   organization_id?: number | null
+  requester_membership_id?: number | null
   type_id?: number | null
   sla_policy_id?: number | null
   sla_response_at?: string | null
@@ -76,6 +84,8 @@ export interface Ticket {
   legacy_workflow?: boolean
   created_by_name?: string
   organization_name?: string
+  requester_display_title?: string
+  requester_identity_type?: string
   manager_reviewer_name?: string
   it_reviewer_name?: string
   it_manager_reviewer_name?: string
@@ -92,6 +102,7 @@ export interface CreateRequestInput {
   description: string
   priority: string
   request_kind: 'support' | 'software' | 'technology_review'
+  requester_membership_id?: number | null
   asset_id?: number | null
   software_name?: string
   software_request_type?: 'new_app' | 'feature_development'
@@ -202,17 +213,37 @@ export interface LoginAttemptSummary {
 }
 
 export interface UserOrgDetail {
+  membership_id: number
   organization_id: number
   org_name: string
   holding_id: number
   holding_name: string
+  role_id?: number | null
+  role_name?: string
+  role_label?: string
+  identity_type: 'member' | 'employee' | 'lecturer' | 'student' | 'contractor' | 'service_account'
+  display_title?: string
+  identity_source: string
+  external_membership_id?: string | null
+  is_active: boolean
+  is_default: boolean
+}
+
+export interface UserMembershipInput {
+  organization_id: number
+  role_id: number | null
+  identity_type: UserOrgDetail['identity_type']
+  display_title: string
+  identity_source: string
+  external_membership_id?: string | null
+  is_default: boolean
 }
 
 export interface Holding {
   id: number
   name: string
   slug: string
-  it_organization_id?: number | null
+  service_provider_organization_id?: number | null
   created_at: string
 }
 
@@ -276,10 +307,13 @@ interface LoginResponse {
   token: string
   user: User
   permissions: string[]
+  memberships: UserOrgDetail[]
+  active_membership_id: number
 }
 
 export const api = {
   setToken,
+  setMembership,
 
   login: (email: string, password: string) =>
     request<LoginResponse>('/auth/login', {
@@ -287,7 +321,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
-  me: () => request<{ user: User; permissions: string[] }>('/auth/me'),
+  me: (membershipId?: number | null) => request<{ user: User; permissions: string[]; memberships: UserOrgDetail[]; active_membership_id: number }>('/auth/me', undefined, membershipId),
 
   changePassword: (password: string) =>
     request<void>('/auth/password', { method: 'PUT', body: JSON.stringify({ password }) }),
@@ -320,6 +354,8 @@ export const api = {
       request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: { email: string; name: string; role_id: number | null; organization_id?: number | null; org_ids?: number[] }) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    memberships: (id: number) => request<UserOrgDetail[]>(`/users/${id}/memberships`),
+    updateMemberships: (id: number, memberships: UserMembershipInput[]) => request<void>(`/users/${id}/memberships`, { method: 'PUT', body: JSON.stringify({ memberships }) }),
     updatePassword: (id: number, password: string) =>
       request<void>(`/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
     unlock: (id: number) =>
@@ -361,7 +397,7 @@ export const api = {
   holdings: {
     list: () => request<Holding[]>('/holdings'),
     create: (data: { name: string; slug: string }) => request<Holding>('/holdings', { method: 'POST', body: JSON.stringify(data) }),
-    setITOrganization: (id: number, itOrganizationId: number | null) => request<void>(`/holdings/${id}/it-organization`, { method: 'PUT', body: JSON.stringify({ it_organization_id: itOrganizationId }) }),
+    setServiceProvider: (id: number, providerOrganizationId: number | null) => request<void>(`/holdings/${id}/service-provider`, { method: 'PUT', body: JSON.stringify({ provider_organization_id: providerOrganizationId }) }),
   },
 
   organizations: {

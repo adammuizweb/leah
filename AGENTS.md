@@ -10,7 +10,7 @@
 Semua data development/testing saat ini adalah **SEED** (bukan production).
 Data boleh dihapus/dihancurkan kapan pun jika ada perubahan arsitektur.
 
-Seeder: `backend/migrations/003_seed.sql`
+Seeder saat ini: `backend/migrations/999_seed.sql` (`003_seed.sql` hanya untuk schema legacy).
 
 ## Konvensi
 
@@ -77,4 +77,3 @@ terikat ke `organization_id`. Scope otomatis di-filter berdasarkan path organiza
 - `organizations` — hierarki bertingkat dengan parent_id, path, level
 - Middleware scope filter di setiap query (except Root)
 - Backup DB sebelum migration besar: `pg_dump leah > /tmp/leah-$(date +%Y%m%d).sql`
-

@@ -30,9 +30,9 @@ export default function AdminOrganizations() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  const setITOrganization = useMutation({
-    mutationFn: ({ holdingId, organizationId }: { holdingId: number; organizationId: number | null }) => api.holdings.setITOrganization(holdingId, organizationId),
-    onSuccess: () => { toast('IT destination updated', 'success'); queryClient.invalidateQueries({ queryKey: ['holdings'] }) },
+  const setServiceProvider = useMutation({
+    mutationFn: ({ holdingId, organizationId }: { holdingId: number; organizationId: number | null }) => api.holdings.setServiceProvider(holdingId, organizationId),
+    onSuccess: () => { toast('Service provider updated', 'success'); queryClient.invalidateQueries({ queryKey: ['holdings'] }) },
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
@@ -74,10 +74,10 @@ export default function AdminOrganizations() {
           return (
             <div key={h.id} className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div><p className="font-semibold text-sm text-gray-700">{h.name}</p><p className="text-xs text-gray-500 mt-0.5">Choose which organization receives IT requests for this holding.</p></div>
-                <select value={h.it_organization_id || ''} onChange={event => setITOrganization.mutate({ holdingId: h.id, organizationId: event.target.value ? Number(event.target.value) : null })} className="select sm:w-64" disabled={setITOrganization.isPending}>
-                  <option value="">No IT destination configured</option>
-                  {holdingOrgs.map(organization => <option key={organization.id} value={organization.id}>{'—'.repeat(organization.level)} {organization.name}</option>)}
+                <div><p className="font-semibold text-sm text-gray-700">{h.name}</p><p className="text-xs text-gray-500 mt-0.5">Choose the service provider organization. The provider may belong to another holding.</p></div>
+                <select value={h.service_provider_organization_id || ''} onChange={event => setServiceProvider.mutate({ holdingId: h.id, organizationId: event.target.value ? Number(event.target.value) : null })} className="select sm:w-64" disabled={setServiceProvider.isPending}>
+                  <option value="">No service provider configured</option>
+                  {orgs?.map(organization => <option key={organization.id} value={organization.id}>{holdings?.find(item => item.id === organization.holding_id)?.name} / {'—'.repeat(organization.level)} {organization.name}</option>)}
                 </select>
               </div>
               {holdingOrgs.length === 0 ? <p className="px-4 py-3 text-sm text-gray-400">No organizations</p> : (

@@ -186,7 +186,7 @@ export default function TicketDetail() {
                 <Badge value={ticket.status} icon="dot" />
               </div>
               <p className="text-sm text-gray-500">
-                #{ticket.id} &middot; {ticket.created_by_name || 'Pemohon'} &middot; {ticket.organization_name || 'Tanpa organisasi'} &middot; {formatDate(ticket.created_at)}
+                #{ticket.id} &middot; {ticket.created_by_name || 'Pemohon'}{(ticket.requester_display_title || ticket.requester_identity_type) ? ` sebagai ${ticket.requester_display_title || ticket.requester_identity_type}` : ''} &middot; {ticket.organization_name || 'Tanpa organisasi'} &middot; {formatDate(ticket.created_at)}
               </p>
               <p className="text-xs font-medium text-brand-700 mt-1">{REQUEST_KIND_LABELS[ticket.request_kind as RequestKind]}</p>
             </div>

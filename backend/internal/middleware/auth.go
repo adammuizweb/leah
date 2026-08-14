@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,20 +20,22 @@ type AuthorizationState struct {
 	OrgPath        string
 	OrgIDs         []int64
 	OrgPaths       []string
+	MembershipID   int64
 }
 
-type AuthorizationLoader func(context.Context, int64) (*AuthorizationState, error)
+type AuthorizationLoader func(context.Context, int64, *int64) (*AuthorizationState, error)
 
 const (
-	CtxKeyUserID      ctxKey = "user_id"
-	CtxKeyUserEmail   ctxKey = "user_email"
-	CtxKeyUserRole    ctxKey = "user_role"
-	CtxKeyPermissions ctxKey = "permissions"
-	CtxKeyIsRoot      ctxKey = "is_root"
-	CtxKeyOrgID       ctxKey = "organization_id"
-	CtxKeyOrgPath     ctxKey = "org_path"
-	CtxKeyOrgIDs      ctxKey = "org_ids"   // all accessible org IDs from JWT
-	CtxKeyOrgPaths    ctxKey = "org_paths" // paths of those orgs
+	CtxKeyUserID       ctxKey = "user_id"
+	CtxKeyUserEmail    ctxKey = "user_email"
+	CtxKeyUserRole     ctxKey = "user_role"
+	CtxKeyPermissions  ctxKey = "permissions"
+	CtxKeyIsRoot       ctxKey = "is_root"
+	CtxKeyOrgID        ctxKey = "organization_id"
+	CtxKeyOrgPath      ctxKey = "org_path"
+	CtxKeyOrgIDs       ctxKey = "org_ids"   // all accessible org IDs from JWT
+	CtxKeyOrgPaths     ctxKey = "org_paths" // paths of those orgs
+	CtxKeyMembershipID ctxKey = "membership_id"
 )
 
 func Auth(secret string, load AuthorizationLoader) func(http.Handler) http.Handler {
@@ -70,7 +73,16 @@ func Auth(secret string, load AuthorizationLoader) func(http.Handler) http.Handl
 				return
 			}
 			userID := int64(rawUserID)
-			state, err := load(r.Context(), userID)
+			var membershipID *int64
+			if rawMembershipID := strings.TrimSpace(r.Header.Get("X-Membership-ID")); rawMembershipID != "" {
+				parsed, err := strconv.ParseInt(rawMembershipID, 10, 64)
+				if err != nil || parsed < 1 {
+					http.Error(w, `{"error":"invalid membership context"}`, http.StatusUnauthorized)
+					return
+				}
+				membershipID = &parsed
+			}
+			state, err := load(r.Context(), userID, membershipID)
 			if err != nil {
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return
@@ -85,6 +97,7 @@ func Auth(secret string, load AuthorizationLoader) func(http.Handler) http.Handl
 			ctx = context.WithValue(ctx, CtxKeyOrgPath, state.OrgPath)
 			ctx = context.WithValue(ctx, CtxKeyOrgIDs, state.OrgIDs)
 			ctx = context.WithValue(ctx, CtxKeyOrgPaths, state.OrgPaths)
+			ctx = context.WithValue(ctx, CtxKeyMembershipID, state.MembershipID)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
