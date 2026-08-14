@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/adammuiz/leah/internal/models"
@@ -12,6 +14,8 @@ import (
 
 const PasswordHashCost = 12
 const MinPasswordLength = 12
+
+var ErrInvalidRequest = errors.New("invalid request")
 
 func ValidatePassword(password string) error {
 	if len(password) < MinPasswordLength {
@@ -57,11 +61,8 @@ func (s *Service) ListMyTickets(ctx context.Context, f repository.TicketFilter, 
 }
 
 func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
-	if t.Status == "" {
-		t.Status = "new"
-	}
-	if t.Priority == "" {
-		t.Priority = "medium"
+	if err := prepareNewRequest(t); err != nil {
+		return err
 	}
 	// Auto-assign SLA based on priority
 	now := time.Now()
@@ -74,6 +75,28 @@ func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 		t.SLAResolveAt = &resvAt
 	}
 	return s.repo.CreateTicket(ctx, t)
+}
+
+func prepareNewRequest(t *models.Ticket) error {
+	t.Status = "new"
+	if t.Priority == "" {
+		t.Priority = "medium"
+	}
+	if t.RequestKind == "" {
+		t.RequestKind = "incident"
+	}
+	if err := validateRequest(t); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	if err := validatePriority(t.Priority); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	if t.RequestKind == "software" {
+		t.ApprovalStatus = "pending"
+	} else {
+		t.ApprovalStatus = "not_required"
+	}
+	return nil
 }
 
 func (s *Service) GetTicket(ctx context.Context, id int64) (*models.Ticket, error) {
@@ -89,21 +112,26 @@ func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int
 	if t.OrganizationID == nil {
 		t.OrganizationID = existing.OrganizationID
 	}
+	if t.Status == "" {
+		t.Status = existing.Status
+	}
+	t.RequestKind = existing.RequestKind
+	t.ApprovalStatus = existing.ApprovalStatus
+	t.SoftwareName = existing.SoftwareName
+	t.BusinessObjective = existing.BusinessObjective
+	t.TargetUsers = existing.TargetUsers
+	t.DesiredDueDate = existing.DesiredDueDate
+	t.ApprovedBy = existing.ApprovedBy
+	t.ApprovedAt = existing.ApprovedAt
+	t.ApprovalNote = existing.ApprovalNote
+	if err := validateRequest(t); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	if err := validatePriority(t.Priority); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
 	if existing.Status != t.Status {
-		if !isValidTransition(existing.Status, t.Status) {
-			return fmt.Errorf("invalid status transition: %s → %s", existing.Status, t.Status)
-		}
-		// Create status history
-		from := existing.Status
-		h := &models.TicketStatusHistory{
-			TicketID:   t.ID,
-			FromStatus: &from,
-			ToStatus:   t.Status,
-			ChangedBy:  userID,
-		}
-		if err := s.repo.CreateStatusHistory(ctx, h); err != nil {
-			return err
-		}
+		return fmt.Errorf("%w: use the status endpoint to change request status", ErrInvalidRequest)
 	}
 	return s.repo.UpdateTicket(ctx, t, userID)
 }
@@ -113,26 +141,75 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, ticketID int64, newSta
 	if err != nil {
 		return err
 	}
+	if err := validateRequestStatusChange(existing, newStatus); err != nil {
+		return err
+	}
 	if !isValidTransition(existing.Status, newStatus) {
 		return fmt.Errorf("invalid status transition: %s → %s", existing.Status, newStatus)
 	}
-	// Create status history
-	from := existing.Status
-	h := &models.TicketStatusHistory{
-		TicketID:   ticketID,
-		FromStatus: &from,
-		ToStatus:   newStatus,
-		ChangedBy:  userID,
-		Note:       note,
-	}
-	if err := s.repo.CreateStatusHistory(ctx, h); err != nil {
-		return err
-	}
-	return s.repo.UpdateTicketStatus(ctx, ticketID, newStatus, userID, note)
+	return s.repo.UpdateTicketStatus(ctx, ticketID, existing.Status, newStatus, userID, note)
 }
 
 func (s *Service) DeleteTicket(ctx context.Context, id, userID int64) error {
 	return s.repo.DeleteTicket(ctx, id, userID)
+}
+
+func (s *Service) UpdateRequestApproval(ctx context.Context, ticketID int64, status string, actorID int64, note string) (*models.Ticket, error) {
+	if status != "approved" && status != "rejected" {
+		return nil, fmt.Errorf("%w: approval status must be approved or rejected", ErrInvalidRequest)
+	}
+	note = strings.TrimSpace(note)
+	if status == "rejected" && note == "" {
+		return nil, fmt.Errorf("%w: rejection note is required", ErrInvalidRequest)
+	}
+	if err := s.repo.UpdateRequestApproval(ctx, ticketID, status, actorID, note); err != nil {
+		return nil, err
+	}
+	return s.repo.GetTicket(ctx, ticketID)
+}
+
+func validateRequest(t *models.Ticket) error {
+	t.Title = strings.TrimSpace(t.Title)
+	t.Description = strings.TrimSpace(t.Description)
+	t.SoftwareName = strings.TrimSpace(t.SoftwareName)
+	t.BusinessObjective = strings.TrimSpace(t.BusinessObjective)
+	t.TargetUsers = strings.TrimSpace(t.TargetUsers)
+	if t.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	switch t.RequestKind {
+	case "incident", "service":
+		return nil
+	case "software":
+		if t.SoftwareName == "" {
+			return fmt.Errorf("software name is required")
+		}
+		if t.BusinessObjective == "" {
+			return fmt.Errorf("business objective is required")
+		}
+		if t.TargetUsers == "" {
+			return fmt.Errorf("target users are required")
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid request kind")
+	}
+}
+
+func validatePriority(priority string) error {
+	switch priority {
+	case "low", "medium", "high", "critical":
+		return nil
+	default:
+		return fmt.Errorf("invalid priority")
+	}
+}
+
+func validateRequestStatusChange(ticket *models.Ticket, newStatus string) error {
+	if ticket.RequestKind == "software" && ticket.ApprovalStatus != "approved" && newStatus != "cancelled" {
+		return fmt.Errorf("software request must be approved before work can begin")
+	}
+	return nil
 }
 
 func (s *Service) GetStatusHistory(ctx context.Context, ticketID int64) ([]models.TicketStatusHistory, error) {

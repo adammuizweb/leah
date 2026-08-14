@@ -8,6 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import { DetailSkeleton } from '../components/LoadingSkeleton'
+import { APPROVAL_LABELS, REQUEST_KIND_LABELS, approvalClass, type ApprovalStatus, type RequestKind } from '../request'
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'New', open: 'Open', in_progress: 'In Progress', pending: 'Pending',
@@ -28,17 +29,21 @@ export default function TicketDetail() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const { user, permissions } = useAuth()
+  const { user, permissions, hasPermission } = useAuth()
   const [comment, setComment] = useState('')
   const [isInternal, setIsInternal] = useState(false)
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [newStatus, setNewStatus] = useState('')
   const [statusNote, setStatusNote] = useState('')
   const [deleteCommentId, setDeleteCommentId] = useState<number | null>(null)
+  const [approvalAction, setApprovalAction] = useState<'approved' | 'rejected' | null>(null)
+  const [approvalNote, setApprovalNote] = useState('')
 
   const isAdmin = user?.is_root || user?.role === 'admin' || user?.role === 'superadmin'
   const canInternal = isAdmin || permissions.includes('tickets.internal')
   const canChangeStatus = isAdmin || permissions.includes('tickets.update')
+  const canApprove = hasPermission('requests.approve')
+  const canComment = hasPermission('tickets.comment')
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['ticket', id],
@@ -46,7 +51,7 @@ export default function TicketDetail() {
     enabled: !!id,
   })
 
-  const { data: types } = useQuery({ queryKey: ['ticket-types'], queryFn: api.ticketTypes.list })
+  const { data: types } = useQuery({ queryKey: ['ticket-types'], queryFn: api.ticketTypes.list, enabled: hasPermission('ticket_types.read') })
   const { data: comments } = useQuery({
     queryKey: ['ticket-comments', id],
     queryFn: () => api.tickets.comments.list(Number(id)),
@@ -67,6 +72,7 @@ export default function TicketDetail() {
       toast('Status updated', 'success')
       queryClient.invalidateQueries({ queryKey: ['ticket', id] })
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['my-tickets'] })
       queryClient.invalidateQueries({ queryKey: ['ticket-history', id] })
       setShowStatusModal(false)
       setNewStatus('')
@@ -92,17 +98,38 @@ export default function TicketDetail() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
+  const approvalMutation = useMutation({
+    mutationFn: ({ status, note }: { status: 'approved' | 'rejected'; note: string }) => api.tickets.updateApproval(Number(id), status, note),
+    onSuccess: (_, variables) => {
+      toast(variables.status === 'approved' ? 'Request approved' : 'Request rejected', 'success')
+      queryClient.invalidateQueries({ queryKey: ['ticket', id] })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['my-tickets'] })
+      setApprovalAction(null)
+      setApprovalNote('')
+    },
+    onError: (error: Error) => toast(error.message, 'error'),
+  })
+
   if (isLoading) return <DetailSkeleton />
   if (!ticket) return (
     <div className="flex flex-col items-center justify-center py-24">
       <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-      <h2 className="text-lg font-semibold text-gray-900 mb-1">Ticket not found</h2>
-      <p className="text-sm text-gray-500 mb-4">The ticket you're looking for doesn't exist or has been deleted.</p>
-      <Link to="/tickets" className="btn-primary">Back to Tickets</Link>
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">Request not found</h2>
+      <p className="text-sm text-gray-500 mb-4">The request doesn't exist, was deleted, or is outside your access.</p>
+      <Link to="/tickets" className="btn-primary">Back to Requests</Link>
     </div>
   )
 
   const allowedTransitions = validTransitions[ticket.status] || []
+  const availableTransitions = ticket.request_kind === 'software' && ticket.approval_status !== 'approved'
+    ? allowedTransitions.filter(status => status === 'cancelled')
+    : allowedTransitions
+
+  function closeApprovalModal() {
+    setApprovalAction(null)
+    setApprovalNote('')
+  }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
@@ -111,7 +138,7 @@ export default function TicketDetail() {
       {/* Back link */}
       <Link to="/tickets" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-brand-600 transition-colors mb-6">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        Back to Tickets
+        Back to Requests
       </Link>
 
       {/* Header card */}
@@ -126,13 +153,20 @@ export default function TicketDetail() {
               <p className="text-sm text-gray-500">
                 #{ticket.id} &middot; Created {formatDate(ticket.created_at)}
               </p>
+              <p className="text-xs font-medium text-brand-700 mt-1">{REQUEST_KIND_LABELS[ticket.request_kind as RequestKind]}</p>
             </div>
-            {canChangeStatus && allowedTransitions.length > 0 && (
-              <button onClick={() => setShowStatusModal(true)} className="btn-primary shrink-0">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                Change Status
-              </button>
-            )}
+            <div className="flex flex-wrap gap-2 shrink-0">
+              {canApprove && ticket.request_kind === 'software' && ticket.approval_status === 'pending' && ticket.status === 'new' && <>
+                <button onClick={() => setApprovalAction('rejected')} className="btn-secondary text-red-600">Reject</button>
+                <button onClick={() => setApprovalAction('approved')} className="btn-primary bg-emerald-600 hover:bg-emerald-700">Approve</button>
+              </>}
+              {canChangeStatus && availableTransitions.length > 0 && (
+                <button onClick={() => setShowStatusModal(true)} className="btn-primary shrink-0">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                  Change Status
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
@@ -163,6 +197,22 @@ export default function TicketDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: Description + Comments */}
         <div className="lg:col-span-2 space-y-6">
+          {ticket.request_kind === 'software' && (
+            <div className="card p-6 border-violet-200">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div><h2 className="text-base font-semibold text-gray-900">Software Proposal</h2><p className="text-xs text-gray-500 mt-0.5">Business request submitted for discovery and approval.</p></div>
+                <span className={`badge ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{APPROVAL_LABELS[ticket.approval_status as ApprovalStatus]}</span>
+              </div>
+              <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Software name</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.software_name}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Target users</dt><dd className="mt-1 text-gray-900">{ticket.target_users || 'Not specified'}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Business objective</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.business_objective}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Desired date</dt><dd className="mt-1 text-gray-700">{ticket.desired_due_date ? new Date(ticket.desired_due_date).toLocaleDateString('id-ID') : 'Flexible'}</dd></div>
+                {ticket.approved_at && <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Decision date</dt><dd className="mt-1 text-gray-700">{formatDate(ticket.approved_at)}</dd></div>}
+                {ticket.approval_note && <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Approval note</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.approval_note}</dd></div>}
+              </dl>
+            </div>
+          )}
           {/* Description */}
           <div className="card p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-3">Description</h2>
@@ -209,7 +259,7 @@ export default function TicketDetail() {
               </div>
 
               {/* Add comment */}
-              <form onSubmit={e => { e.preventDefault(); if (comment.trim()) commentMutation.mutate() }} className="space-y-3">
+              {canComment && <form onSubmit={e => { e.preventDefault(); if (comment.trim()) commentMutation.mutate() }} className="space-y-3">
                 <textarea value={comment} onChange={e => setComment(e.target.value)} className="input" placeholder="Type your comment..." rows={3} />
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -228,7 +278,7 @@ export default function TicketDetail() {
                     )}
                   </div>
                 </div>
-              </form>
+              </form>}
             </div>
           </div>
         </div>
@@ -271,7 +321,7 @@ export default function TicketDetail() {
             <label className="label">New Status</label>
             <select value={newStatus} onChange={e => setNewStatus(e.target.value)} className="select" required>
               <option value="">— Select —</option>
-              {allowedTransitions.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+              {availableTransitions.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
             </select>
           </div>
           <div>
@@ -286,6 +336,14 @@ export default function TicketDetail() {
               ) : 'Update Status'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal open={approvalAction !== null} onClose={closeApprovalModal} title={approvalAction === 'approved' ? 'Approve Software Request' : 'Reject Software Request'} size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">{approvalAction === 'approved' ? 'Approve this proposal for triage and delivery planning.' : 'Reject this proposal and provide a clear reason to the requester.'}</p>
+          <div><label className="label">Decision note {approvalAction === 'rejected' ? '' : '(optional)'}</label><textarea value={approvalNote} onChange={event => setApprovalNote(event.target.value)} className="input" rows={3} placeholder="Context for the requester and delivery team" required={approvalAction === 'rejected'} /></div>
+          <div className="flex justify-end gap-3"><button onClick={closeApprovalModal} className="btn-secondary">Cancel</button><button onClick={() => approvalAction && approvalMutation.mutate({ status: approvalAction, note: approvalNote })} disabled={approvalMutation.isPending || (approvalAction === 'rejected' && !approvalNote.trim())} className={approvalAction === 'approved' ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary bg-red-600 hover:bg-red-700'}>{approvalMutation.isPending ? 'Saving...' : approvalAction === 'approved' ? 'Approve Request' : 'Reject Request'}</button></div>
         </div>
       </Modal>
 

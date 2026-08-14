@@ -24,6 +24,7 @@ func TestOrganizationScope(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM user_organizations WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tickets WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
 		_, _ = pool.Exec(ctx, `DELETE FROM assets WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE organization_id IN (SELECT id FROM organizations WHERE holding_id=$1)`, holdingID)
 		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE holding_id=$1`, holdingID)
@@ -139,5 +140,75 @@ func TestOrganizationScope(t *testing.T) {
 	}
 	if storedName == created.Name {
 		t.Fatal("user fields changed despite rejected organization update")
+	}
+
+	softwareRequest := &models.Ticket{
+		Title:             "Scope Software Request",
+		Description:       "Request integration coverage",
+		Status:            "new",
+		Priority:          "medium",
+		CreatedBy:         childUserID,
+		OrganizationID:    &childID,
+		RequestKind:       "software",
+		ApprovalStatus:    "pending",
+		SoftwareName:      "Scope Hub",
+		BusinessObjective: "Validate scoped request persistence",
+		TargetUsers:       "Scope testers",
+	}
+	if err := repo.CreateTicket(scopedCtx, softwareRequest); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateRequestApproval(scopedCtx, softwareRequest.ID, "approved", childUserID, "Approved in integration test"); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := repo.GetTicket(scopedCtx, softwareRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.RequestKind != "software" || approved.ApprovalStatus != "approved" || approved.ApprovedAt == nil {
+		t.Fatalf("approved request = %#v", approved)
+	}
+	statusNote := "Discovery started"
+	if err := repo.UpdateTicketStatus(scopedCtx, softwareRequest.ID, "new", "open", childUserID, &statusNote); err != nil {
+		t.Fatal(err)
+	}
+	history, err := repo.ListStatusHistory(scopedCtx, softwareRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].FromStatus == nil || *history[0].FromStatus != "new" || history[0].ToStatus != "open" {
+		t.Fatalf("request status history = %#v", history)
+	}
+	softwareRequest.Title = "Edited Scope Software Request"
+	if err := repo.UpdateTicket(scopedCtx, softwareRequest, childUserID); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := repo.GetTicket(scopedCtx, softwareRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Title != softwareRequest.Title || edited.Status != "open" {
+		t.Fatalf("stale metadata edit reverted workflow state: %#v", edited)
+	}
+
+	rejectedRequest := *softwareRequest
+	rejectedRequest.ID = 0
+	rejectedRequest.Title = "Rejected Scope Software Request"
+	rejectedRequest.ApprovalStatus = "pending"
+	rejectedRequest.ApprovedBy = nil
+	rejectedRequest.ApprovedAt = nil
+	rejectedRequest.ApprovalNote = ""
+	if err := repo.CreateTicket(scopedCtx, &rejectedRequest); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateRequestApproval(scopedCtx, rejectedRequest.ID, "rejected", childUserID, "Not aligned with current priorities"); err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := repo.GetTicket(scopedCtx, rejectedRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.ApprovalStatus != "rejected" || rejected.Status != "cancelled" {
+		t.Fatalf("rejected request state = %s/%s", rejected.ApprovalStatus, rejected.Status)
 	}
 }

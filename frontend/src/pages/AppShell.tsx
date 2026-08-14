@@ -1,18 +1,19 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../services/auth'
 import { useState } from 'react'
+import CreateRequestModal from '../components/CreateRequestModal'
 
 const isUserRole = (role?: string, isSuper?: boolean) => role === 'user' && !isSuper
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { to: '/tickets', label: 'Tickets', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
+  { to: '/tickets', label: 'Requests', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
   { to: '/assets', label: 'Assets', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
 ]
 
 const pageTitle: Record<string, string> = {
   '/dashboard': 'Dashboard',
-  '/tickets': 'Tickets',
+  '/tickets': 'Requests',
   '/assets': 'Assets',
   '/admin': 'Admin',
   '/profile': 'Profile',
@@ -41,10 +42,12 @@ function usePageTitle(pathname: string): string {
 export default function AppShell() {
   const { user, logout, hasPermission } = useAuth()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const isUser = isUserRole(user?.role, user?.is_root)
   const isAdmin = isUser ? false : (user?.role === 'admin' || user?.role === 'superadmin' || user?.is_root || hasPermission('settings.read'))
+  const canCreateRequest = hasPermission('tickets.create')
   const visibleNavItems = isUser ? navItems.filter(n => n.to === '/tickets') : navItems
 
   const title = usePageTitle(location.pathname)
@@ -52,13 +55,20 @@ export default function AppShell() {
 
   const bottomNav = [
     ...(isUser ? [{ to: '/my', label: 'Home', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' }] : [{ to: '/dashboard', label: 'Home', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' }]),
-    { to: '/tickets', label: 'Tickets', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
+    { to: '/tickets', label: 'Requests', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
     ...(!isUser ? [{ to: '/assets', label: 'Assets', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' }] : []),
     ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }] : []),
   ]
 
   function isActive(to: string) {
     return location.pathname === to || location.pathname.startsWith(to + '/')
+  }
+
+  function setRequestModal(open: boolean) {
+    const next = new URLSearchParams(searchParams)
+    if (open) next.set('new', 'request')
+    else next.delete('new')
+    setSearchParams(next, { replace: true })
   }
 
   return (
@@ -178,6 +188,13 @@ export default function AppShell() {
 
           <div className="flex-1" />
 
+          {canCreateRequest && (
+            <button onClick={() => setRequestModal(true)} className="btn-primary btn-sm mr-3">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m-6-6h12" /></svg>
+              <span className="hidden sm:inline">Create Request</span>
+            </button>
+          )}
+
           {/* Profile avatar + logout — mobile */}
           <Link to="/profile" className="lg:hidden w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center shrink-0 hover:ring-2 hover:ring-brand-300 transition-all">
             <span className="text-sm font-semibold text-brand-700">{firstInitial}</span>
@@ -210,6 +227,7 @@ export default function AppShell() {
           )
         })}
       </nav>
+      <CreateRequestModal open={canCreateRequest && searchParams.get('new') === 'request'} onClose={() => setRequestModal(false)} />
     </div>
   )
 }

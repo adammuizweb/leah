@@ -17,7 +17,7 @@ const statusColors: Record<string, string> = {
 }
 
 export default function UserPanel() {
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const navigate = useNavigate()
 
   const { data: myAssets, isLoading: assetsLoading } = useQuery({
@@ -41,12 +41,12 @@ export default function UserPanel() {
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
             Welcome, {user?.name?.split(' ')[0] || 'User'}
           </h1>
-          <p className="mt-1 text-sm text-gray-500">Your assigned assets and tickets.</p>
+          <p className="mt-1 text-sm text-gray-500">Your assigned assets and requests.</p>
         </div>
-        <button onClick={() => navigate('/tickets')} className="btn-primary">
+        {hasPermission('tickets.create') && <button onClick={() => navigate('/my?new=request')} className="btn-primary">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-          Create Ticket
-        </button>
+          Create Request
+        </button>}
       </div>
 
       {/* Assigned Assets */}
@@ -77,16 +77,16 @@ export default function UserPanel() {
         )}
       </div>
 
-      {/* My Tickets */}
+      {/* My Requests */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-900">My Tickets</h2>
+          <h2 className="text-lg font-semibold text-gray-900">My Requests</h2>
           <button onClick={() => navigate('/tickets')} className="text-xs font-medium text-brand-600 hover:text-brand-700">View all</button>
         </div>
         {ticketsLoading ? (
           <CardSkeleton count={3} />
         ) : tickets.length === 0 ? (
-          <EmptyState icon="ticket" title="No tickets" description="You haven't created any tickets yet." />
+          <EmptyState icon="ticket" title="No requests" description="You haven't submitted any requests yet." />
         ) : (
           <div className="card divide-y divide-gray-50 overflow-hidden">
             {tickets.slice(0, 10).map(t => (

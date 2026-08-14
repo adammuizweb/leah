@@ -51,9 +51,30 @@ export interface Ticket {
   sla_response_at?: string | null
   sla_resolve_at?: string | null
   closed_at?: string | null
+  request_kind: 'incident' | 'service' | 'software'
+  approval_status: 'not_required' | 'pending' | 'approved' | 'rejected'
+  software_name?: string
+  business_objective?: string
+  target_users?: string
+  desired_due_date?: string | null
+  approved_by?: number | null
+  approved_at?: string | null
+  approval_note?: string
   created_at: string
   updated_at: string
   deleted_at?: string | null
+}
+
+export interface CreateRequestInput {
+  title: string
+  description: string
+  priority: string
+  request_kind: 'incident' | 'service' | 'software'
+  asset_id?: number | null
+  software_name?: string
+  business_objective?: string
+  target_users?: string
+  desired_due_date?: string | null
 }
 
 export interface TicketType {
@@ -335,7 +356,7 @@ export const api = {
       return request<PaginatedResult<Ticket>>('/tickets/mine' + q)
     },
     get: (id: number) => request<Ticket>(`/tickets/${id}`),
-    create: (data: Partial<Ticket>) =>
+    create: (data: CreateRequestInput) =>
       request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: Partial<Ticket>) =>
       request<Ticket>(`/tickets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -343,6 +364,8 @@ export const api = {
       request<void>(`/tickets/${id}`, { method: 'DELETE' }),
     updateStatus: (id: number, status: string, note?: string) =>
       request<Ticket>(`/tickets/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
+    updateApproval: (id: number, status: 'approved' | 'rejected', note: string) =>
+      request<Ticket>(`/tickets/${id}/approval`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
     history: (id: number) =>
       request<TicketStatusHistory[]>(`/tickets/${id}/history`),
     comments: {

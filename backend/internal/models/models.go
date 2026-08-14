@@ -20,25 +20,34 @@ type Organization struct {
 }
 
 type Ticket struct {
-	ID             int64      `json:"id"`
-	Title          string     `json:"title"`
-	Description    string     `json:"description"`
-	Status         string     `json:"status"`
-	Priority       string     `json:"priority"`
-	AssignedTo     *int64     `json:"assigned_to"`
-	CreatedBy      int64      `json:"created_by"`
-	UpdatedBy      *int64     `json:"updated_by,omitempty"`
-	DeletedBy      *int64     `json:"deleted_by,omitempty"`
-	AssetID        *int64     `json:"asset_id,omitempty"`
-	OrganizationID *int64     `json:"organization_id,omitempty"`
-	TypeID         *int64     `json:"type_id,omitempty"`
-	SLAPolicyID    *int64     `json:"sla_policy_id,omitempty"`
-	SLAResponseAt  *time.Time `json:"sla_response_at,omitempty"`
-	SLAResolveAt   *time.Time `json:"sla_resolve_at,omitempty"`
-	ClosedAt       *time.Time `json:"closed_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
+	ID                int64      `json:"id"`
+	Title             string     `json:"title"`
+	Description       string     `json:"description"`
+	Status            string     `json:"status"`
+	Priority          string     `json:"priority"`
+	AssignedTo        *int64     `json:"assigned_to"`
+	CreatedBy         int64      `json:"created_by"`
+	UpdatedBy         *int64     `json:"updated_by,omitempty"`
+	DeletedBy         *int64     `json:"deleted_by,omitempty"`
+	AssetID           *int64     `json:"asset_id,omitempty"`
+	OrganizationID    *int64     `json:"organization_id,omitempty"`
+	TypeID            *int64     `json:"type_id,omitempty"`
+	SLAPolicyID       *int64     `json:"sla_policy_id,omitempty"`
+	SLAResponseAt     *time.Time `json:"sla_response_at,omitempty"`
+	SLAResolveAt      *time.Time `json:"sla_resolve_at,omitempty"`
+	ClosedAt          *time.Time `json:"closed_at,omitempty"`
+	RequestKind       string     `json:"request_kind"`
+	ApprovalStatus    string     `json:"approval_status"`
+	SoftwareName      string     `json:"software_name,omitempty"`
+	BusinessObjective string     `json:"business_objective,omitempty"`
+	TargetUsers       string     `json:"target_users,omitempty"`
+	DesiredDueDate    *time.Time `json:"desired_due_date,omitempty"`
+	ApprovedBy        *int64     `json:"approved_by,omitempty"`
+	ApprovedAt        *time.Time `json:"approved_at,omitempty"`
+	ApprovalNote      string     `json:"approval_note,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	DeletedAt         *time.Time `json:"deleted_at,omitempty"`
 }
 
 type TicketType struct {

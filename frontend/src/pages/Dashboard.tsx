@@ -17,7 +17,7 @@ const statusColors: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const navigate = useNavigate()
 
   const isUser = user?.role === 'user' && !user?.is_root
@@ -56,7 +56,7 @@ export default function Dashboard() {
 
   const stats = [
     {
-      label: 'Total Tickets',
+      label: 'Total Requests',
       value: totalTickets,
       icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z',
       color: 'bg-brand-500',
@@ -64,7 +64,7 @@ export default function Dashboard() {
       loading: ticketsLoading,
     },
     {
-      label: 'Open Tickets',
+      label: 'Open Requests',
       value: openCount,
       icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
       color: 'bg-amber-500',
@@ -80,7 +80,7 @@ export default function Dashboard() {
       loading: assetsLoading,
     },
     {
-      label: 'My Tickets',
+      label: 'Assigned to Me',
       value: myTickets,
       icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
       color: 'bg-purple-500',
@@ -137,7 +137,7 @@ export default function Dashboard() {
               ))}
             </div>
           ) : allTickets?.data?.length === 0 ? (
-            <EmptyState icon="ticket" title="No tickets yet" description="Create your first ticket to get started." />
+            <EmptyState icon="ticket" title="No requests yet" description="New requests will appear here." />
           ) : (
             <div className="space-y-3">
               {Object.entries(statusCounts).map(([status, count]) => {
@@ -166,12 +166,12 @@ export default function Dashboard() {
         <div className="card p-5 lg:col-span-1">
           <h2 className="text-base font-semibold text-gray-900 mb-4">Quick Actions</h2>
           <div className="space-y-2">
-            <button onClick={() => navigate('/tickets')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors group">
+            {hasPermission('tickets.create') && <button onClick={() => navigate('/dashboard?new=request')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors group">
               <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center group-hover:bg-brand-100 transition-colors">
                 <svg className="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
               </div>
-              <span>Create Ticket</span>
-            </button>
+              <span>Create Request</span>
+            </button>}
             <button onClick={() => navigate('/assets')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors group">
               <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
                 <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
@@ -193,10 +193,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Tickets */}
+        {/* Recent Requests */}
         <div className="card lg:col-span-1">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="text-base font-semibold text-gray-900">Recent Tickets</h2>
+            <h2 className="text-base font-semibold text-gray-900">Recent Requests</h2>
             <button onClick={() => navigate('/tickets')} className="text-xs font-medium text-brand-600 hover:text-brand-700">View all</button>
           </div>
           {recentLoading ? (
@@ -211,7 +211,7 @@ export default function Dashboard() {
             </div>
           ) : !recentTickets?.data?.length ? (
             <div className="py-8">
-              <EmptyState icon="ticket" title="No tickets" description="Recent tickets will appear here." />
+              <EmptyState icon="ticket" title="No requests" description="Recent requests will appear here." />
             </div>
           ) : (
             <div className="divide-y divide-gray-50">

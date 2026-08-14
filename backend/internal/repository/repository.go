@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -146,7 +147,7 @@ func (r *Repository) validateOrganizationIDs(ctx context.Context, organizationID
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, created_at, updated_at`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, created_at, updated_at`
 
 type TicketFilter struct {
 	Search         string
@@ -156,6 +157,8 @@ type TicketFilter struct {
 	OrganizationID int64
 	HoldingID      int64
 	CreatedBy      *int64
+	RequestKind    string
+	ApprovalStatus string
 	Page           int
 	PerPage        int
 }
@@ -188,7 +191,7 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	}
 
 	if f.Search != "" {
-		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d)`, aidx, aidx)
+		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d OR t.software_name ILIKE $%d OR t.business_objective ILIKE $%d OR t.target_users ILIKE $%d)`, aidx, aidx, aidx, aidx, aidx)
 		args = append(args, "%"+f.Search+"%")
 		aidx++
 	}
@@ -222,6 +225,16 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 		args = append(args, *f.CreatedBy)
 		aidx++
 	}
+	if f.RequestKind != "" {
+		where += fmt.Sprintf(` AND t.request_kind = $%d`, aidx)
+		args = append(args, f.RequestKind)
+		aidx++
+	}
+	if f.ApprovalStatus != "" {
+		where += fmt.Sprintf(` AND t.approval_status = $%d`, aidx)
+		args = append(args, f.ApprovalStatus)
+		aidx++
+	}
 
 	var total int
 	countQuery := `SELECT COUNT(*) FROM tickets t ` + where
@@ -242,7 +255,7 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	tickets := make([]models.Ticket, 0)
 	for rows.Next() {
 		var t models.Ticket
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt, &t.SLAResolveAt, &t.ClosedAt, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := scanTicket(rows, &t); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -266,8 +279,8 @@ func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 		}
 	}
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -279,12 +292,58 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 		query += ` AND organization_id=ANY($2)`
 		args = append(args, orgIDs)
 	}
-	err := r.db.QueryRow(ctx, query, args...,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID, &t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt, &t.SLAResolveAt, &t.ClosedAt, &t.CreatedAt, &t.UpdatedAt)
+	err := scanTicket(r.db.QueryRow(ctx, query, args...), t)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found")
 	}
 	return t, nil
+}
+
+type ticketScanner interface {
+	Scan(...any) error
+}
+
+func scanTicket(row ticketScanner, t *models.Ticket) error {
+	return row.Scan(
+		&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority,
+		&t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID,
+		&t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt,
+		&t.SLAResolveAt, &t.ClosedAt, &t.RequestKind, &t.ApprovalStatus,
+		&t.SoftwareName, &t.BusinessObjective, &t.TargetUsers, &t.DesiredDueDate,
+		&t.ApprovedBy, &t.ApprovedAt, &t.ApprovalNote, &t.CreatedAt, &t.UpdatedAt,
+	)
+}
+
+func (r *Repository) UpdateRequestApproval(ctx context.Context, ticketID int64, status string, actorID int64, note string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	orgIDs := r.scopeOrgIDs(ctx)
+	query := `UPDATE tickets SET approval_status=$1::text, approved_by=$2, approved_at=NOW(), approval_note=$3, status=CASE WHEN $1::text='rejected' THEN 'cancelled' ELSE status END, updated_at=NOW(), updated_by=$2 WHERE id=$4 AND deleted_at IS NULL AND request_kind='software' AND approval_status='pending' AND status='new'`
+	args := []any{status, actorID, note, ticketID}
+	if orgIDs != nil {
+		query += ` AND organization_id=ANY($5)`
+		args = append(args, orgIDs)
+	}
+	query += ` RETURNING status`
+	var updatedStatus string
+	if err := tx.QueryRow(ctx, query, args...).Scan(&updatedStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("pending software request not found")
+		}
+		return err
+	}
+	if status == "rejected" {
+		if _, err := tx.Exec(ctx, `INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,'new','cancelled',$2,$3)`, ticketID, actorID, note); err != nil {
+			return err
+		}
+	}
+	if updatedStatus == "" {
+		return fmt.Errorf("pending software request not found")
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
@@ -301,10 +360,10 @@ func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID 
 		}
 	}
 	orgIDs := r.scopeOrgIDs(ctx)
-	query := `UPDATE tickets SET title=$1, description=$2, status=$3, priority=$4, assigned_to=$5, asset_id=$6, organization_id=$7, type_id=$8, updated_at=NOW(), updated_by=$9 WHERE id=$10 AND deleted_at IS NULL`
-	args := []any{t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, t.TypeID, userID, t.ID}
+	query := `UPDATE tickets SET title=$1, description=$2, priority=$3, assigned_to=$4, asset_id=$5, organization_id=$6, type_id=$7, updated_at=NOW(), updated_by=$8 WHERE id=$9 AND deleted_at IS NULL`
+	args := []any{t.Title, t.Description, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, t.TypeID, userID, t.ID}
 	if orgIDs != nil {
-		query += ` AND organization_id=ANY($11)`
+		query += ` AND organization_id=ANY($10)`
 		args = append(args, orgIDs)
 	}
 	tag, err := r.db.Exec(ctx,
@@ -319,34 +378,35 @@ func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID 
 	return nil
 }
 
-func (r *Repository) UpdateTicketStatus(ctx context.Context, ticketID int64, newStatus string, userID int64, note *string) error {
+func (r *Repository) UpdateTicketStatus(ctx context.Context, ticketID int64, oldStatus, newStatus string, userID int64, note *string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
 	now := time.Now()
 	var closedAt *time.Time
 	if newStatus == "closed" {
 		closedAt = &now
 	}
 	orgIDs := r.scopeOrgIDs(ctx)
-	query := `UPDATE tickets SET status=$1, closed_at=$2, updated_at=NOW(), updated_by=$3 WHERE id=$4 AND deleted_at IS NULL`
-	args := []any{newStatus, closedAt, userID, ticketID}
+	query := `UPDATE tickets SET status=$1, closed_at=$2, updated_at=NOW(), updated_by=$3 WHERE id=$4 AND status=$5 AND deleted_at IS NULL`
+	args := []any{newStatus, closedAt, userID, ticketID, oldStatus}
 	if orgIDs != nil {
-		query += ` AND organization_id=ANY($5)`
+		query += ` AND organization_id=ANY($6)`
 		args = append(args, orgIDs)
 	}
-	tag, err := r.db.Exec(ctx, query, args...)
+	tag, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("ticket not found")
+		return fmt.Errorf("ticket status changed concurrently")
 	}
-	return nil
-}
-
-func (r *Repository) CreateStatusHistory(ctx context.Context, h *models.TicketStatusHistory) error {
-	return r.db.QueryRow(ctx,
-		`INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
-		h.TicketID, h.FromStatus, h.ToStatus, h.ChangedBy, h.Note,
-	).Scan(&h.ID, &h.CreatedAt)
+	if _, err := tx.Exec(ctx, `INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,$2,$3,$4,$5)`, ticketID, oldStatus, newStatus, userID, note); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) ListStatusHistory(ctx context.Context, ticketID int64) ([]models.TicketStatusHistory, error) {
@@ -355,7 +415,7 @@ func (r *Repository) ListStatusHistory(ctx context.Context, ticketID int64) ([]m
 	}
 	rows, err := r.db.Query(ctx,
 		`SELECT h.id, h.ticket_id, h.from_status, h.to_status, h.changed_by, h.note, h.created_at,
-		        u.name, u.email
+		        u.name
 		 FROM ticket_status_history h
 		 JOIN users u ON u.id = h.changed_by
 		 WHERE h.ticket_id = $1
@@ -368,7 +428,7 @@ func (r *Repository) ListStatusHistory(ctx context.Context, ticketID int64) ([]m
 	hh := make([]models.TicketStatusHistory, 0)
 	for rows.Next() {
 		var h models.TicketStatusHistory
-		if err := rows.Scan(&h.ID, &h.TicketID, &h.FromStatus, &h.ToStatus, &h.ChangedBy, &h.Note, &h.CreatedAt, &h.ChangedByName, &h.ChangedByEmail); err != nil {
+		if err := rows.Scan(&h.ID, &h.TicketID, &h.FromStatus, &h.ToStatus, &h.ChangedBy, &h.Note, &h.CreatedAt, &h.ChangedByName); err != nil {
 			return nil, err
 		}
 		hh = append(hh, h)
@@ -440,7 +500,7 @@ func (r *Repository) ListTicketComments(ctx context.Context, ticketID int64, inc
 		return nil, err
 	}
 	query := `SELECT c.id, c.ticket_id, c.user_id, c.content, c.is_internal, c.created_at,
-	                 u.name, u.email
+	                 u.name
 	          FROM ticket_comments c
 	          JOIN users u ON u.id = c.user_id
 	          WHERE c.ticket_id = $1 AND c.deleted_at IS NULL`
@@ -457,7 +517,7 @@ func (r *Repository) ListTicketComments(ctx context.Context, ticketID int64, inc
 	cc := make([]models.TicketComment, 0)
 	for rows.Next() {
 		var c models.TicketComment
-		if err := rows.Scan(&c.ID, &c.TicketID, &c.UserID, &c.Content, &c.IsInternal, &c.CreatedAt, &c.UserName, &c.UserEmail); err != nil {
+		if err := rows.Scan(&c.ID, &c.TicketID, &c.UserID, &c.Content, &c.IsInternal, &c.CreatedAt, &c.UserName); err != nil {
 			return nil, err
 		}
 		cc = append(cc, c)

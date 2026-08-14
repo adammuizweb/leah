@@ -67,8 +67,13 @@ func parsePagination(r *http.Request) (page, perPage int) {
 func (h *Handler) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	page, perPage := parsePagination(r)
 	f := repository.TicketFilter{
-		Page:    page,
-		PerPage: perPage,
+		Search:         r.URL.Query().Get("search"),
+		Status:         r.URL.Query().Get("status"),
+		Priority:       r.URL.Query().Get("priority"),
+		RequestKind:    r.URL.Query().Get("request_kind"),
+		ApprovalStatus: r.URL.Query().Get("approval_status"),
+		Page:           page,
+		PerPage:        perPage,
 	}
 	result, err := h.svc.ListMyTickets(r.Context(), f, userIDFromCtx(r))
 	if err != nil {
@@ -90,6 +95,8 @@ func (h *Handler) ListTickets(w http.ResponseWriter, r *http.Request) {
 		TypeID:         typeID,
 		OrganizationID: orgID,
 		HoldingID:      holdingID,
+		RequestKind:    r.URL.Query().Get("request_kind"),
+		ApprovalStatus: r.URL.Query().Get("approval_status"),
 		Page:           page,
 		PerPage:        perPage,
 	}
@@ -116,7 +123,11 @@ func (h *Handler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		t.OrganizationID = orgIDFromCtx(r)
 	}
 	if err := h.svc.CreateTicket(r.Context(), &t); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
+		if errors.Is(err, services.ErrInvalidRequest) {
+			respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		} else {
+			respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to create request"})
+		}
 		return
 	}
 	respond(w, 201, t)
@@ -128,12 +139,33 @@ func (h *Handler) GetTicket(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid id"})
 		return
 	}
-	t, err := h.svc.GetTicket(r.Context(), id)
-	if err != nil {
-		respond(w, 404, map[string]string{"error": "not found"})
+	t, ok := h.readableTicket(w, r, id)
+	if !ok {
 		return
 	}
 	respond(w, 200, t)
+}
+
+func (h *Handler) UpdateRequestApproval(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	ticket, err := h.svc.UpdateRequestApproval(r.Context(), id, body.Status, userIDFromCtx(r), body.Note)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, ticket)
 }
 
 func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +192,11 @@ func (h *Handler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.UpdateTicket(r.Context(), &t, userIDFromCtx(r)); err != nil {
-		respond(w, 500, map[string]string{"error": err.Error()})
+		if errors.Is(err, services.ErrInvalidRequest) {
+			respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		} else {
+			respond(w, http.StatusInternalServerError, map[string]string{"error": "failed to update request"})
+		}
 		return
 	}
 	respond(w, 200, t)
@@ -514,6 +550,9 @@ func (h *Handler) ListTicketComments(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid id"})
 		return
 	}
+	if _, ok := h.readableTicket(w, r, id); !ok {
+		return
+	}
 	includeInternal := false
 	perms, _ := r.Context().Value(middleware.CtxKeyPermissions).([]string)
 	role, _ := r.Context().Value(middleware.CtxKeyUserRole).(string)
@@ -535,12 +574,19 @@ func (h *Handler) CreateTicketComment(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "invalid id"})
 		return
 	}
+	if _, ok := h.readableTicket(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Content    string `json:"content"`
 		IsInternal bool   `json:"is_internal"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		respond(w, 400, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if body.IsInternal && !requestCan(r, "tickets.internal") {
+		respond(w, http.StatusForbidden, map[string]string{"error": "tickets.internal permission required"})
 		return
 	}
 	c := &models.TicketComment{
@@ -575,6 +621,9 @@ func (h *Handler) GetTicketHistory(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond(w, 400, map[string]string{"error": "invalid id"})
+		return
+	}
+	if _, ok := h.readableTicket(w, r, id); !ok {
 		return
 	}
 	history, err := h.svc.GetStatusHistory(r.Context(), id)
@@ -669,4 +718,13 @@ func sameOptionalID(left, right *int64) bool {
 		return left == nil && right == nil
 	}
 	return *left == *right
+}
+
+func (h *Handler) readableTicket(w http.ResponseWriter, r *http.Request, ticketID int64) (*models.Ticket, bool) {
+	ticket, err := h.svc.GetTicket(r.Context(), ticketID)
+	if err != nil || (!requestCan(r, "tickets.read") && ticket.CreatedBy != userIDFromCtx(r)) {
+		respond(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, false
+	}
+	return ticket, true
 }

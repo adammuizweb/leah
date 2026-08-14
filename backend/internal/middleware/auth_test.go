@@ -35,6 +35,31 @@ func TestRequireRoot(t *testing.T) {
 	})
 }
 
+func TestRequireAnyPermission(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	t.Run("allows any matching permission", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), CtxKeyPermissions, []string{"tickets.read.own"})
+		r := httptest.NewRequest(http.MethodGet, "/api/tickets/1", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+		RequireAnyPermission("tickets.read", "tickets.read.own")(next).ServeHTTP(w, r)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204", w.Code)
+		}
+	})
+
+	t.Run("rejects missing permissions", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/api/tickets/1", nil)
+		w := httptest.NewRecorder()
+		RequireAnyPermission("tickets.read", "tickets.read.own")(next).ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", w.Code)
+		}
+	})
+}
+
 func TestAuthLoadsCurrentRootAccess(t *testing.T) {
 	const secret = "test-secret"
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{

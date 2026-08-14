@@ -22,6 +22,7 @@ migrations=(
     016_root_account.sql
     017_core_access.sql
     018_runtime_privileges.sql
+    019_request_workflow.sql
 )
 
 psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "

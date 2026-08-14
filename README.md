@@ -9,8 +9,10 @@ protection in a React single-page application backed by a Go API and PostgreSQL.
 
 ## Features
 
-- Helpdesk tickets with priorities, assignment, comments, internal notes,
-  status history, and SLA deadlines.
+- Unified employee requests for incidents, IT services, and software proposals,
+  with priorities, assignment, comments, internal notes, status history, and SLA deadlines.
+- Software request approval with business objectives, target users, desired
+  delivery dates, decision notes, and a controlled transition into delivery.
 - Asset inventory with types, hierarchical categories, reusable models,
   assignment, ticket relationships, and bulk creation.
 - Holdings and hierarchical organizations with scoped data access.

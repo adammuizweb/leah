@@ -92,6 +92,10 @@ func Auth(secret string, load AuthorizationLoader) func(http.Handler) http.Handl
 }
 
 func RequirePermission(permission string) func(http.Handler) http.Handler {
+	return RequireAnyPermission(permission)
+}
+
+func RequireAnyPermission(permissions ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			perms, _ := r.Context().Value(CtxKeyPermissions).([]string)
@@ -106,15 +110,21 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 
 			// Admin role bypasses content permissions (tickets, assets, users),
 			// but NOT settings.* (role/permission management)
-			if role == "admin" && !strings.HasPrefix(permission, "settings.") {
-				next.ServeHTTP(w, r)
-				return
+			if role == "admin" {
+				for _, permission := range permissions {
+					if !strings.HasPrefix(permission, "settings.") {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
 			}
 
 			for _, p := range perms {
-				if p == permission {
-					next.ServeHTTP(w, r)
-					return
+				for _, permission := range permissions {
+					if p == permission {
+						next.ServeHTTP(w, r)
+						return
+					}
 				}
 			}
 
