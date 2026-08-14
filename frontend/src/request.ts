@@ -1,4 +1,5 @@
 export type RequestKind = 'support' | 'software' | 'technology_review'
+export type SoftwareRequestType = 'new_app' | 'feature_development'
 export type ApprovalStatus = 'not_required' | 'pending_manager' | 'pending_it_review' | 'pending_it_manager' | 'approved' | 'rejected'
 
 export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
@@ -11,6 +12,11 @@ export const REQUEST_KIND_DESCRIPTIONS: Record<RequestKind, string> = {
   support: 'Komputer bermasalah, butuh akses, instalasi, atau bantuan IT lainnya.',
   software: 'Membuat aplikasi baru, menambah fitur, atau mengubah aplikasi yang sudah ada.',
   technology_review: 'Sudah ada pilihan barang, server, aplikasi, atau vendor dan butuh rekomendasi IT sebelum diajukan ke Keuangan.',
+}
+
+export const SOFTWARE_REQUEST_TYPE_LABELS: Record<SoftwareRequestType, string> = {
+  new_app: 'Buat Aplikasi Baru',
+  feature_development: 'Tambah Fitur di Aplikasi yang Sudah Ada',
 }
 
 export const APPROVAL_LABELS: Record<ApprovalStatus, string> = {

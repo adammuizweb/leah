@@ -19,11 +19,12 @@ func TestValidateRequest(t *testing.T) {
 		{
 			name: "software",
 			ticket: models.Ticket{
-				Title:             "Leave management",
-				RequestKind:       "software",
-				SoftwareName:      "Leave Hub",
-				BusinessObjective: "Replace the manual approval spreadsheet",
-				TargetUsers:       "All employees",
+				Title:               "Leave management",
+				RequestKind:         "software",
+				SoftwareRequestType: "new_app",
+				SoftwareName:        "Leave Hub",
+				BusinessObjective:   "Replace the manual approval spreadsheet",
+				TargetUsers:         "All employees",
 			},
 		},
 		{
@@ -38,8 +39,8 @@ func TestValidateRequest(t *testing.T) {
 		},
 		{name: "missing title", ticket: models.Ticket{RequestKind: "support"}, wantErr: "title is required"},
 		{name: "invalid kind", ticket: models.Ticket{Title: "Unknown", RequestKind: "project"}, wantErr: "invalid request kind"},
-		{name: "software name required", ticket: models.Ticket{Title: "New software", RequestKind: "software", BusinessObjective: "Automate work"}, wantErr: "software name is required"},
-		{name: "objective required", ticket: models.Ticket{Title: "New software", RequestKind: "software", SoftwareName: "Work Hub"}, wantErr: "business objective is required"},
+		{name: "software name required", ticket: models.Ticket{Title: "New software", RequestKind: "software", SoftwareRequestType: "new_app", BusinessObjective: "Automate work"}, wantErr: "software name is required"},
+		{name: "objective required", ticket: models.Ticket{Title: "New software", RequestKind: "software", SoftwareName: "Work Hub", SoftwareRequestType: "new_app"}, wantErr: "business objective is required"},
 		{name: "technology name required", ticket: models.Ticket{Title: "Review server", RequestKind: "technology_review", BusinessObjective: "Research", Specification: "Server specification"}, wantErr: "technology or vendor name is required"},
 	}
 
@@ -56,13 +57,28 @@ func TestValidateRequest(t *testing.T) {
 	}
 }
 
+func TestPrepareNewSoftwareRequestRequiresType(t *testing.T) {
+	ticket := &models.Ticket{Title: "New software", RequestKind: "software", SoftwareName: "Work Hub", BusinessObjective: "Automate work", TargetUsers: "Operations"}
+	if err := prepareNewRequest(ticket); err == nil || !strings.Contains(err.Error(), "choose whether") {
+		t.Fatalf("prepareNewRequest() error = %v, want software request type error", err)
+	}
+}
+
+func TestValidateLegacySoftwareRequest(t *testing.T) {
+	ticket := &models.Ticket{Title: "Legacy software", RequestKind: "software", SoftwareRequestType: "unspecified", SoftwareName: "Legacy Hub", BusinessObjective: "Existing workflow", TargetUsers: "Operations"}
+	if err := validateRequest(ticket); err != nil {
+		t.Fatalf("legacy software request cannot be edited: %v", err)
+	}
+}
+
 func TestValidateRequestTrimsSoftwareFields(t *testing.T) {
 	ticket := models.Ticket{
-		Title:             "  Internal portal  ",
-		RequestKind:       "software",
-		SoftwareName:      "  Portal  ",
-		BusinessObjective: "  Centralize employee services  ",
-		TargetUsers:       "  All employees  ",
+		Title:               "  Internal portal  ",
+		RequestKind:         "software",
+		SoftwareRequestType: "feature_development",
+		SoftwareName:        "  Portal  ",
+		BusinessObjective:   "  Centralize employee services  ",
+		TargetUsers:         "  All employees  ",
 	}
 	if err := validateRequest(&ticket); err != nil {
 		t.Fatal(err)
@@ -88,14 +104,15 @@ func TestSoftwareRequestRequiresApprovalBeforeWork(t *testing.T) {
 
 func TestPrepareNewSoftwareRequestOverridesClientState(t *testing.T) {
 	ticket := &models.Ticket{
-		Title:             "Workflow request",
-		Status:            "closed",
-		Priority:          "high",
-		RequestKind:       "software",
-		ApprovalStatus:    "approved",
-		SoftwareName:      "Workflow Hub",
-		BusinessObjective: "Track controlled delivery",
-		TargetUsers:       "Operations",
+		Title:               "Workflow request",
+		Status:              "closed",
+		Priority:            "high",
+		RequestKind:         "software",
+		SoftwareRequestType: "new_app",
+		ApprovalStatus:      "approved",
+		SoftwareName:        "Workflow Hub",
+		BusinessObjective:   "Track controlled delivery",
+		TargetUsers:         "Operations",
 	}
 	if err := prepareNewRequest(ticket); err != nil {
 		t.Fatal(err)

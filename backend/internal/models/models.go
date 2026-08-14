@@ -41,6 +41,7 @@ type Ticket struct {
 	RequestKind             string     `json:"request_kind"`
 	ApprovalStatus          string     `json:"approval_status"`
 	SoftwareName            string     `json:"software_name,omitempty"`
+	SoftwareRequestType     string     `json:"software_request_type,omitempty"`
 	BusinessObjective       string     `json:"business_objective,omitempty"`
 	TargetUsers             string     `json:"target_users,omitempty"`
 	DesiredDueDate          *time.Time `json:"desired_due_date,omitempty"`

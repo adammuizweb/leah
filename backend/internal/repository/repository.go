@@ -213,7 +213,7 @@ func (r *Repository) validateOrganizationIDs(ctx context.Context, organizationID
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, technology_name, vendor_name, specification, estimated_cost, manager_reviewed_by, manager_reviewed_at, manager_review_note, it_reviewed_by, it_reviewed_at, it_review_note, it_recommendation, it_manager_recommendation, legacy_workflow, created_at, updated_at, COALESCE((SELECT name FROM users WHERE users.id=created_by),''), COALESCE((SELECT name FROM organizations WHERE organizations.id=organization_id),''), COALESCE((SELECT name FROM users WHERE users.id=manager_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=it_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=approved_by),'')`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, technology_name, vendor_name, specification, estimated_cost, manager_reviewed_by, manager_reviewed_at, manager_review_note, it_reviewed_by, it_reviewed_at, it_review_note, it_recommendation, it_manager_recommendation, legacy_workflow, created_at, updated_at, COALESCE((SELECT name FROM users WHERE users.id=created_by),''), COALESCE((SELECT name FROM organizations WHERE organizations.id=organization_id),''), COALESCE((SELECT name FROM users WHERE users.id=manager_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=it_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=approved_by),'')`
 
 type TicketFilter struct {
 	Search         string
@@ -367,6 +367,9 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 }
 
 func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
+	if t.SoftwareRequestType == "" {
+		t.SoftwareRequestType = "unspecified"
+	}
 	if !r.organizationAllowed(ctx, t.OrganizationID) {
 		return fmt.Errorf("organization is outside your scope")
 	}
@@ -380,8 +383,8 @@ func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 		}
 	}
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, technology_name, vendor_name, specification, estimated_cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate, t.TechnologyName, t.VendorName, t.Specification, t.EstimatedCost,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, software_request_type, business_objective, target_users, desired_due_date, technology_name, vendor_name, specification, estimated_cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.SoftwareRequestType, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate, t.TechnologyName, t.VendorName, t.Specification, t.EstimatedCost,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -410,7 +413,7 @@ func scanTicket(row ticketScanner, t *models.Ticket) error {
 		&t.AssignedTo, &t.CreatedBy, &t.UpdatedBy, &t.DeletedBy, &t.AssetID,
 		&t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt,
 		&t.SLAResolveAt, &t.ClosedAt, &t.RequestKind, &t.ApprovalStatus,
-		&t.SoftwareName, &t.BusinessObjective, &t.TargetUsers, &t.DesiredDueDate,
+		&t.SoftwareName, &t.SoftwareRequestType, &t.BusinessObjective, &t.TargetUsers, &t.DesiredDueDate,
 		&t.ApprovedBy, &t.ApprovedAt, &t.ApprovalNote,
 		&t.TechnologyName, &t.VendorName, &t.Specification, &t.EstimatedCost,
 		&t.ManagerReviewedBy, &t.ManagerReviewedAt, &t.ManagerReviewNote,

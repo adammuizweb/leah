@@ -161,8 +161,8 @@ export default function Tickets() {
         <select value={kindFilter} onChange={event => { setKindFilter(event.target.value); setPage(1) }} className="select">
           <option value="">Semua jenis permintaan</option>
           <option value="support">Butuh Bantuan IT</option>
-          <option value="software">Buat atau Ubah Aplikasi</option>
           <option value="technology_review">Minta Review IT</option>
+          <option value="software">Buat atau Ubah Aplikasi</option>
         </select>
         <select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setPage(1) }} className="select">
           <option value="">All statuses</option>

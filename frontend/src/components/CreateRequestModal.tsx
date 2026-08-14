@@ -5,14 +5,15 @@ import Modal from './Modal'
 import { useToast } from './Toast'
 import { useAuth } from '../services/auth'
 import { api, type CreateRequestInput } from '../services/api'
-import { REQUEST_KIND_DESCRIPTIONS, REQUEST_KIND_LABELS, type RequestKind } from '../request'
+import { REQUEST_KIND_DESCRIPTIONS, REQUEST_KIND_LABELS, SOFTWARE_REQUEST_TYPE_LABELS, type RequestKind, type SoftwareRequestType } from '../request'
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-const kinds: RequestKind[] = ['support', 'software', 'technology_review']
+const kinds: RequestKind[] = ['support', 'technology_review', 'software']
+const softwareTypes: SoftwareRequestType[] = ['new_app', 'feature_development']
 
 export default function CreateRequestModal({ open, onClose }: Props) {
   const navigate = useNavigate()
@@ -25,6 +26,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
   const [priority, setPriority] = useState('medium')
   const [assetId, setAssetId] = useState<number | ''>('')
   const [softwareName, setSoftwareName] = useState('')
+  const [softwareRequestType, setSoftwareRequestType] = useState<SoftwareRequestType | null>(null)
   const [businessObjective, setBusinessObjective] = useState('')
   const [targetUsers, setTargetUsers] = useState('')
   const [desiredDueDate, setDesiredDueDate] = useState('')
@@ -48,6 +50,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
     setPriority('medium')
     setAssetId('')
     setSoftwareName('')
+    setSoftwareRequestType(null)
     setBusinessObjective('')
     setTargetUsers('')
     setDesiredDueDate('')
@@ -84,6 +87,7 @@ export default function CreateRequestModal({ open, onClose }: Props) {
       request_kind: kind,
       asset_id: assetId || null,
       software_name: kind === 'software' ? softwareName : undefined,
+      software_request_type: kind === 'software' ? softwareRequestType || undefined : undefined,
       business_objective: kind !== 'support' ? businessObjective : undefined,
       target_users: kind === 'software' ? targetUsers : undefined,
       desired_due_date: kind === 'software' && desiredDueDate ? `${desiredDueDate}T00:00:00Z` : null,
@@ -116,16 +120,34 @@ export default function CreateRequestModal({ open, onClose }: Props) {
             ))}
           </div>
         </div>
+      ) : kind === 'software' && !softwareRequestType ? (
+        <div>
+          <button type="button" onClick={() => setKind(null)} className="text-sm text-brand-600 hover:text-brand-700 font-medium mb-5">&larr; Kembali ke jenis permintaan</button>
+          <h3 className="font-semibold text-gray-900">Apa yang ingin dilakukan?</h3>
+          <p className="text-sm text-gray-500 mt-1 mb-5">Pilih apakah Anda membutuhkan aplikasi baru atau perubahan pada aplikasi yang sudah digunakan.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {softwareTypes.map(type => (
+              <button key={type} type="button" onClick={() => setSoftwareRequestType(type)} className="group rounded-xl border border-gray-200 p-5 text-left hover:border-violet-400 hover:bg-violet-50/50 transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center mb-3">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={type === 'new_app' ? 'M12 4v16m8-8H4' : 'M12 6V4m0 16v-2m6-6h2M4 12H2m15.657-5.657 1.414-1.414M4.929 19.071l1.414-1.414M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'} /></svg>
+                </div>
+                <p className="font-semibold text-gray-900 group-hover:text-violet-700">{SOFTWARE_REQUEST_TYPE_LABELS[type]}</p>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">{type === 'new_app' ? 'Belum ada aplikasi yang digunakan untuk kebutuhan ini.' : 'Aplikasi sudah ada dan perlu fitur atau kemampuan tambahan.'}</p>
+              </button>
+            ))}
+          </div>
+        </div>
       ) : (
         <form onSubmit={submit} className="space-y-5">
-          <button type="button" onClick={() => setKind(null)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">&larr; Ganti jenis permintaan</button>
+          <button type="button" onClick={() => kind === 'software' ? setSoftwareRequestType(null) : setKind(null)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">&larr; {kind === 'software' ? 'Ganti kebutuhan aplikasi' : 'Ganti jenis permintaan'}</button>
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Jenis permintaan</p>
             <p className="text-sm font-semibold text-gray-900 mt-0.5">{REQUEST_KIND_LABELS[kind]}</p>
+            {kind === 'software' && softwareRequestType && <p className="text-xs text-violet-700 mt-1">{SOFTWARE_REQUEST_TYPE_LABELS[softwareRequestType]}</p>}
           </div>
           <div>
             <label className="label">Apa yang Anda butuhkan?</label>
-            <input value={title} onChange={event => setTitle(event.target.value)} className="input" placeholder={kind === 'software' ? 'Contoh: Aplikasi pengajuan cuti' : kind === 'technology_review' ? 'Contoh: Review server dari Vendor ABC' : 'Tulis kebutuhan atau masalah secara singkat'} required autoFocus />
+            <input value={title} onChange={event => setTitle(event.target.value)} className="input" placeholder={kind === 'software' ? softwareRequestType === 'new_app' ? 'Contoh: Aplikasi pengajuan cuti' : 'Contoh: Tambah notifikasi WhatsApp pada aplikasi cuti' : kind === 'technology_review' ? 'Contoh: Review server dari Vendor ABC' : 'Tulis kebutuhan atau masalah secara singkat'} required autoFocus />
           </div>
           <div>
             <label className="label">Ceritakan lebih lengkap</label>
@@ -134,13 +156,13 @@ export default function CreateRequestModal({ open, onClose }: Props) {
           {kind === 'software' && (
             <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 space-y-4">
               <div>
-                <h3 className="font-semibold text-gray-900">Kebutuhan aplikasi</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Cukup jelaskan kebutuhan pekerjaan. Detail teknis akan dibahas bersama IT.</p>
+                <h3 className="font-semibold text-gray-900">{softwareRequestType === 'new_app' ? 'Kebutuhan aplikasi baru' : 'Kebutuhan fitur tambahan'}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{softwareRequestType === 'new_app' ? 'Cukup jelaskan kebutuhan pekerjaan. Detail teknis akan dibahas bersama IT.' : 'Jelaskan aplikasi yang digunakan, fitur yang dibutuhkan, dan manfaat perubahannya.'}</p>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Nama aplikasi</label>
-                  <input value={softwareName} onChange={event => setSoftwareName(event.target.value)} className="input" placeholder="Nama sementara juga boleh" required />
+                  <label className="label">{softwareRequestType === 'new_app' ? 'Nama aplikasi' : 'Nama aplikasi yang sudah ada'}</label>
+                  <input value={softwareName} onChange={event => setSoftwareName(event.target.value)} className="input" placeholder={softwareRequestType === 'new_app' ? 'Nama sementara juga boleh' : 'Aplikasi yang ingin ditambahkan fiturnya'} required />
                 </div>
                 <div>
                   <label className="label">Siapa yang akan memakai?</label>

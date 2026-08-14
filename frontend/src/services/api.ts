@@ -54,6 +54,7 @@ export interface Ticket {
   request_kind: 'support' | 'software' | 'technology_review'
   approval_status: 'not_required' | 'pending_manager' | 'pending_it_review' | 'pending_it_manager' | 'approved' | 'rejected'
   software_name?: string
+  software_request_type?: 'unspecified' | 'new_app' | 'feature_development'
   business_objective?: string
   target_users?: string
   desired_due_date?: string | null
@@ -93,6 +94,7 @@ export interface CreateRequestInput {
   request_kind: 'support' | 'software' | 'technology_review'
   asset_id?: number | null
   software_name?: string
+  software_request_type?: 'new_app' | 'feature_development'
   business_objective?: string
   target_users?: string
   desired_due_date?: string | null

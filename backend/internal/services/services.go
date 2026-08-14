@@ -103,6 +103,13 @@ func prepareNewRequest(t *models.Ticket) error {
 	if t.RequestKind == "" {
 		t.RequestKind = "support"
 	}
+	if t.RequestKind == "software" {
+		if t.SoftwareRequestType != "new_app" && t.SoftwareRequestType != "feature_development" {
+			return fmt.Errorf("%w: choose whether to create a new app or develop an existing app", ErrInvalidRequest)
+		}
+	} else {
+		t.SoftwareRequestType = "unspecified"
+	}
 	if err := validateRequest(t); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
@@ -138,6 +145,7 @@ func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int
 	t.RequestKind = existing.RequestKind
 	t.ApprovalStatus = existing.ApprovalStatus
 	t.SoftwareName = existing.SoftwareName
+	t.SoftwareRequestType = existing.SoftwareRequestType
 	t.BusinessObjective = existing.BusinessObjective
 	t.TargetUsers = existing.TargetUsers
 	t.DesiredDueDate = existing.DesiredDueDate
@@ -246,6 +254,9 @@ func validateRequest(t *models.Ticket) error {
 	case "software":
 		if t.SoftwareName == "" {
 			return fmt.Errorf("software name is required")
+		}
+		if t.SoftwareRequestType != "unspecified" && t.SoftwareRequestType != "new_app" && t.SoftwareRequestType != "feature_development" {
+			return fmt.Errorf("invalid software request type")
 		}
 		if t.BusinessObjective == "" {
 			return fmt.Errorf("business objective is required")

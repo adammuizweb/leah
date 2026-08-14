@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import { DetailSkeleton } from '../components/LoadingSkeleton'
-import { APPROVAL_LABELS, REQUEST_KIND_LABELS, approvalClass, type ApprovalStatus, type RequestKind } from '../request'
+import { APPROVAL_LABELS, REQUEST_KIND_LABELS, SOFTWARE_REQUEST_TYPE_LABELS, approvalClass, type ApprovalStatus, type RequestKind, type SoftwareRequestType } from '../request'
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'New', open: 'Open', in_progress: 'In Progress', pending: 'Pending',
@@ -247,6 +247,7 @@ export default function TicketDetail() {
                 <span className={`badge ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{approvalLabel}</span>
               </div>
               <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Jenis pengembangan</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.software_request_type && ticket.software_request_type !== 'unspecified' ? SOFTWARE_REQUEST_TYPE_LABELS[ticket.software_request_type as SoftwareRequestType] : 'Belum diklasifikasikan (data lama)'}</dd></div>
                 <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Nama aplikasi</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.software_name}</dd></div>
                 <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Pengguna</dt><dd className="mt-1 text-gray-900">{ticket.target_users || 'Belum ditentukan'}</dd></div>
                 <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Tujuan dan manfaat</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.business_objective}</dd></div>

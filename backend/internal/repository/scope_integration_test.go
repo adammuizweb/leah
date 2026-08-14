@@ -181,17 +181,18 @@ func TestOrganizationScope(t *testing.T) {
 	}
 
 	softwareRequest := &models.Ticket{
-		Title:             "Scope Software Request",
-		Description:       "Request integration coverage",
-		Status:            "new",
-		Priority:          "medium",
-		CreatedBy:         childUserID,
-		OrganizationID:    &childID,
-		RequestKind:       "software",
-		ApprovalStatus:    "pending_manager",
-		SoftwareName:      "Scope Hub",
-		BusinessObjective: "Validate scoped request persistence",
-		TargetUsers:       "Scope testers",
+		Title:               "Scope Software Request",
+		Description:         "Request integration coverage",
+		Status:              "new",
+		Priority:            "medium",
+		CreatedBy:           childUserID,
+		OrganizationID:      &childID,
+		RequestKind:         "software",
+		SoftwareRequestType: "new_app",
+		ApprovalStatus:      "pending_manager",
+		SoftwareName:        "Scope Hub",
+		BusinessObjective:   "Validate scoped request persistence",
+		TargetUsers:         "Scope testers",
 	}
 	if err := repo.CreateTicket(scopedCtx, softwareRequest); err != nil {
 		t.Fatal(err)
@@ -317,5 +318,25 @@ func TestOrganizationScope(t *testing.T) {
 	}
 	if err := repo.UpdateDepartmentManagerReview(scopedCtx, cancelledRequest.ID, departmentManagerID, "approved", "Too late"); err == nil {
 		t.Fatal("cancelled request continued through approval workflow")
+	}
+
+	supportRequest := &models.Ticket{
+		Title:          "Scoped Support Request",
+		Status:         "new",
+		Priority:       "medium",
+		CreatedBy:      childUserID,
+		OrganizationID: &childID,
+		RequestKind:    "support",
+		ApprovalStatus: "not_required",
+	}
+	if err := repo.CreateTicket(scopedCtx, supportRequest); err != nil {
+		t.Fatal(err)
+	}
+	storedSupport, err := repo.GetTicket(scopedCtx, supportRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedSupport.SoftwareRequestType != "unspecified" {
+		t.Fatalf("support software request type = %q", storedSupport.SoftwareRequestType)
 	}
 }

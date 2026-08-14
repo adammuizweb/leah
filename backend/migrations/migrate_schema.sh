@@ -24,6 +24,7 @@ migrations=(
     018_runtime_privileges.sql
     019_request_workflow.sql
     020_department_it_workflow.sql
+    021_software_request_type.sql
 )
 
 psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "
