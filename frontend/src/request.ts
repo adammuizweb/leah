@@ -3,13 +3,13 @@ export type ApprovalStatus = 'not_required' | 'pending_manager' | 'pending_it_re
 
 export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
   support: 'Butuh Bantuan IT',
-  software: 'Ajukan Aplikasi Baru',
+  software: 'Buat atau Ubah Aplikasi',
   technology_review: 'Minta Review IT',
 }
 
 export const REQUEST_KIND_DESCRIPTIONS: Record<RequestKind, string> = {
   support: 'Komputer bermasalah, butuh akses, instalasi, atau bantuan IT lainnya.',
-  software: 'Divisi Anda membutuhkan aplikasi baru untuk mendukung pekerjaan.',
+  software: 'Membuat aplikasi baru, menambah fitur, atau mengubah aplikasi yang sudah ada.',
   technology_review: 'Sudah ada pilihan barang, server, aplikasi, atau vendor dan butuh rekomendasi IT sebelum diajukan ke Keuangan.',
 }
 

@@ -9,7 +9,7 @@ protection in a React single-page application backed by a Go API and PostgreSQL.
 
 ## Features
 
-- Unified employee requests for IT help, new applications, and IT reviews of
+- Unified employee requests for IT help, application development or changes, and IT reviews of
   technology or vendors, with priorities, assignment, comments, status history,
   and SLA deadlines.
 - Formal request routing from the requester's department manager to IT review
