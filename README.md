@@ -9,13 +9,16 @@ protection in a React single-page application backed by a Go API and PostgreSQL.
 
 ## Features
 
-- Unified employee requests for incidents, IT services, and software proposals,
-  with priorities, assignment, comments, internal notes, status history, and SLA deadlines.
-- Software request approval with business objectives, target users, desired
-  delivery dates, decision notes, and a controlled transition into delivery.
+- Unified employee requests for IT help, new applications, and IT reviews of
+  technology or vendors, with priorities, assignment, comments, status history,
+  and SLA deadlines.
+- Formal request routing from the requester's department manager to IT review
+  and IT manager sign-off, with an immutable decision trail. IT review records a
+  technical recommendation and does not replace the Finance purchasing process.
 - Asset inventory with types, hierarchical categories, reusable models,
   assignment, ticket relationships, and bulk creation.
-- Holdings and hierarchical organizations with scoped data access.
+- Holdings and hierarchical organizations with scoped data access, inherited
+  department managers, and an explicitly configured IT destination.
 - Configurable roles and granular permissions.
 - Soft deletion, restore, and permanent-delete workflows.
 - User profiles and avatar uploads.

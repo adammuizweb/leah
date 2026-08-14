@@ -51,8 +51,8 @@ export interface Ticket {
   sla_response_at?: string | null
   sla_resolve_at?: string | null
   closed_at?: string | null
-  request_kind: 'incident' | 'service' | 'software'
-  approval_status: 'not_required' | 'pending' | 'approved' | 'rejected'
+  request_kind: 'support' | 'software' | 'technology_review'
+  approval_status: 'not_required' | 'pending_manager' | 'pending_it_review' | 'pending_it_manager' | 'approved' | 'rejected'
   software_name?: string
   business_objective?: string
   target_users?: string
@@ -60,6 +60,27 @@ export interface Ticket {
   approved_by?: number | null
   approved_at?: string | null
   approval_note?: string
+  technology_name?: string
+  vendor_name?: string
+  specification?: string
+  estimated_cost?: number | null
+  manager_reviewed_by?: number | null
+  manager_reviewed_at?: string | null
+  manager_review_note?: string
+  it_reviewed_by?: number | null
+  it_reviewed_at?: string | null
+  it_review_note?: string
+  it_recommendation?: 'recommended' | 'not_recommended' | ''
+  it_manager_recommendation?: 'recommended' | 'not_recommended' | ''
+  legacy_workflow?: boolean
+  created_by_name?: string
+  organization_name?: string
+  manager_reviewer_name?: string
+  it_reviewer_name?: string
+  it_manager_reviewer_name?: string
+  can_manager_review?: boolean
+  can_it_review?: boolean
+  can_it_manager_review?: boolean
   created_at: string
   updated_at: string
   deleted_at?: string | null
@@ -69,12 +90,16 @@ export interface CreateRequestInput {
   title: string
   description: string
   priority: string
-  request_kind: 'incident' | 'service' | 'software'
+  request_kind: 'support' | 'software' | 'technology_review'
   asset_id?: number | null
   software_name?: string
   business_objective?: string
   target_users?: string
   desired_due_date?: string | null
+  technology_name?: string
+  vendor_name?: string
+  specification?: string
+  estimated_cost?: number | null
 }
 
 export interface TicketType {
@@ -104,6 +129,17 @@ export interface TicketStatusHistory {
   created_at: string
   changed_by_name?: string
   changed_by_email?: string
+}
+
+export interface RequestWorkflowHistory {
+  id: number
+  ticket_id: number
+  stage: 'department_manager' | 'it_review' | 'it_manager' | 'legacy_approval'
+  decision: 'approved' | 'rejected' | 'recommended' | 'not_recommended'
+  actor_id: number
+  actor_name: string
+  note: string
+  created_at: string
 }
 
 export interface SLAPolicy {
@@ -174,6 +210,7 @@ export interface Holding {
   id: number
   name: string
   slug: string
+  it_organization_id?: number | null
   created_at: string
 }
 
@@ -184,6 +221,7 @@ export interface Organization {
   holding_id: number
   path: string
   level: number
+  manager_user_id?: number | null
   created_at: string
 }
 
@@ -321,12 +359,14 @@ export const api = {
   holdings: {
     list: () => request<Holding[]>('/holdings'),
     create: (data: { name: string; slug: string }) => request<Holding>('/holdings', { method: 'POST', body: JSON.stringify(data) }),
+    setITOrganization: (id: number, itOrganizationId: number | null) => request<void>(`/holdings/${id}/it-organization`, { method: 'PUT', body: JSON.stringify({ it_organization_id: itOrganizationId }) }),
   },
 
   organizations: {
     list: () => request<Organization[]>('/organizations'),
     create: (data: { name: string; holding_id: number; parent_id?: number | null }) =>
       request<Organization>('/organizations', { method: 'POST', body: JSON.stringify(data) }),
+    setManager: (id: number, managerUserId: number | null) => request<void>(`/organizations/${id}/manager`, { method: 'PUT', body: JSON.stringify({ manager_user_id: managerUserId }) }),
   },
 
   assetCategories: {
@@ -364,10 +404,15 @@ export const api = {
       request<void>(`/tickets/${id}`, { method: 'DELETE' }),
     updateStatus: (id: number, status: string, note?: string) =>
       request<Ticket>(`/tickets/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
-    updateApproval: (id: number, status: 'approved' | 'rejected', note: string) =>
-      request<Ticket>(`/tickets/${id}/approval`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
+    departmentManagerReview: (id: number, decision: 'approved' | 'rejected', note: string) =>
+      request<Ticket>(`/tickets/${id}/department-manager-review`, { method: 'PUT', body: JSON.stringify({ decision, note }) }),
+    itReview: (id: number, recommendation: 'recommended' | 'not_recommended', note: string) =>
+      request<Ticket>(`/tickets/${id}/it-review`, { method: 'PUT', body: JSON.stringify({ recommendation, note }) }),
+    itManagerReview: (id: number, recommendation: 'recommended' | 'not_recommended', note: string) =>
+      request<Ticket>(`/tickets/${id}/it-manager-review`, { method: 'PUT', body: JSON.stringify({ recommendation, note }) }),
     history: (id: number) =>
       request<TicketStatusHistory[]>(`/tickets/${id}/history`),
+    workflowHistory: (id: number) => request<RequestWorkflowHistory[]>(`/tickets/${id}/workflow-history`),
     comments: {
       list: (id: number) => request<TicketComment[]>(`/tickets/${id}/comments`),
       create: (id: number, data: { content: string; is_internal: boolean }) =>

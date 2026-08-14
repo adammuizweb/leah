@@ -191,7 +191,7 @@ export default function AppShell() {
           {canCreateRequest && (
             <button onClick={() => setRequestModal(true)} className="btn-primary btn-sm mr-3">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m-6-6h12" /></svg>
-              <span className="hidden sm:inline">Create Request</span>
+              <span className="hidden sm:inline">Buat Permintaan</span>
             </button>
           )}
 

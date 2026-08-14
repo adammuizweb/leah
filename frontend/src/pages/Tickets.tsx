@@ -159,10 +159,10 @@ export default function Tickets() {
           <input value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} className="input pl-9" placeholder="Search requests..." />
         </div>
         <select value={kindFilter} onChange={event => { setKindFilter(event.target.value); setPage(1) }} className="select">
-          <option value="">All request types</option>
-          <option value="incident">Report an Issue</option>
-          <option value="service">Service Request</option>
-          <option value="software">Software Development</option>
+          <option value="">Semua jenis permintaan</option>
+          <option value="support">Butuh Bantuan IT</option>
+          <option value="software">Ajukan Aplikasi Baru</option>
+          <option value="technology_review">Minta Review IT</option>
         </select>
         <select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setPage(1) }} className="select">
           <option value="">All statuses</option>
@@ -173,10 +173,12 @@ export default function Tickets() {
           <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
         </select>
         <select value={approvalFilter} onChange={event => { setApprovalFilter(event.target.value); setPage(1) }} className="select">
-          <option value="">All approvals</option>
-          <option value="pending">Awaiting approval</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
+          <option value="">Semua tahap persetujuan</option>
+          <option value="pending_manager">Menunggu Manager Divisi</option>
+          <option value="pending_it_review">Menunggu Review IT</option>
+          <option value="pending_it_manager">Menunggu Manager IT</option>
+          <option value="approved">Direkomendasikan IT</option>
+          <option value="rejected">Tidak direkomendasikan</option>
         </select>
         {canReadAll && <>
           <select value={holdingFilter} onChange={event => { setHoldingFilter(event.target.value ? Number(event.target.value) : ''); setOrgFilter(''); setPage(1) }} className="select">
@@ -196,7 +198,7 @@ export default function Tickets() {
 
       <div className="card overflow-hidden">
         {isLoading ? <TableSkeleton rows={perPage} cols={6} /> : tickets.length === 0 ? (
-          <EmptyState icon="ticket" title="No requests found" description={search || kindFilter || statusFilter || priorityFilter || approvalFilter || typeFilter || holdingFilter || orgFilter ? 'Try adjusting your filters.' : 'Submit your first request to get started.'} action={!search && !kindFilter && !statusFilter && !priorityFilter && !approvalFilter && !typeFilter && !holdingFilter && !orgFilter ? { label: 'Create Request', onClick: openCreateRequest } : undefined} />
+          <EmptyState icon="ticket" title="No requests found" description={search || kindFilter || statusFilter || priorityFilter || approvalFilter || typeFilter || holdingFilter || orgFilter ? 'Try adjusting your filters.' : 'Submit your first request to get started.'} action={!search && !kindFilter && !statusFilter && !priorityFilter && !approvalFilter && !typeFilter && !holdingFilter && !orgFilter ? { label: 'Buat Permintaan', onClick: openCreateRequest } : undefined} />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
@@ -212,13 +214,16 @@ export default function Tickets() {
               <tbody className="divide-y divide-gray-50">
                 {tickets.map(ticket => {
                   const asset = ticket.asset_id ? assetMap.get(ticket.asset_id) : null
+                  const requestApprovalLabel = ticket.legacy_workflow
+                    ? (ticket.approval_status === 'approved' ? 'Disetujui (alur lama)' : 'Ditolak (alur lama)')
+                    : APPROVAL_LABELS[ticket.approval_status as ApprovalStatus]
                   return <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
                     {canBulk && <td className="px-4 py-3.5"><input type="checkbox" checked={selected.has(ticket.id)} onChange={() => toggleSelected(ticket.id)} className="rounded border-gray-300 text-brand-600" /></td>}
                     <td className="px-4 py-3.5"><Link to={`/tickets/${ticket.id}`} className="text-sm font-medium text-gray-900 hover:text-brand-600">{ticket.title}</Link><p className="text-xs text-gray-400 mt-0.5">#{ticket.id}</p></td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">
                       <div>{REQUEST_KIND_LABELS[ticket.request_kind as RequestKind]}</div>
                       {ticket.type_id && <div className="text-xs text-gray-400 mt-0.5">{typeMap.get(ticket.type_id) || 'Unknown type'}</div>}
-                      {ticket.approval_status !== 'not_required' && <span className={`badge text-[10px] mt-1 ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{APPROVAL_LABELS[ticket.approval_status as ApprovalStatus]}</span>}
+                      {ticket.approval_status !== 'not_required' && <span className={`badge text-[10px] mt-1 ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{requestApprovalLabel}</span>}
                     </td>
                     <td className="px-4 py-3.5"><Badge value={ticket.status} icon="dot" /></td>
                     <td className="px-4 py-3.5"><Badge value={ticket.priority} /></td>

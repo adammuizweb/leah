@@ -82,6 +82,72 @@ func (r *Repository) organizationAllowed(ctx context.Context, organizationID *in
 	return false
 }
 
+func contextHasPermission(ctx context.Context, permission string) bool {
+	if isRoot, _ := ctx.Value(middleware.CtxKeyIsRoot).(bool); isRoot {
+		return true
+	}
+	if role, _ := ctx.Value(middleware.CtxKeyUserRole).(string); role == "admin" {
+		return true
+	}
+	permissions, _ := ctx.Value(middleware.CtxKeyPermissions).([]string)
+	for _, candidate := range permissions {
+		if candidate == permission {
+			return true
+		}
+	}
+	return false
+}
+
+// ticketScopeOrgIDs extends scope only for ticket work routed to the configured
+// IT organization. It must not be used by asset, user, or settings repositories.
+func (r *Repository) ticketScopeOrgIDs(ctx context.Context) []int64 {
+	base := r.scopeOrgIDs(ctx)
+	if base == nil {
+		return nil
+	}
+	userID, _ := ctx.Value(middleware.CtxKeyUserID).(int64)
+	if userID < 1 {
+		return base
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT o.id
+		FROM organizations o
+		WHERE o.id=ANY($1)
+		OR EXISTS (
+			SELECT 1 FROM holdings h
+			JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+			WHERE h.id=o.holding_id AND (
+				it_org.manager_user_id=$2
+				OR ($3 AND EXISTS (
+					SELECT 1 FROM organizations member_org
+					WHERE member_org.holding_id=h.id
+					AND member_org.path LIKE it_org.path || '%'
+					AND member_org.id IN (
+						SELECT organization_id FROM user_organizations WHERE user_id=$2
+						UNION SELECT organization_id FROM users WHERE id=$2 AND organization_id IS NOT NULL
+					)
+				))
+			)
+		)
+	`, base, userID, contextHasPermission(ctx, "requests.it_review"))
+	if err != nil {
+		return base
+	}
+	defer rows.Close()
+	result := make([]int64, 0, len(base))
+	for rows.Next() {
+		var organizationID int64
+		if err := rows.Scan(&organizationID); err != nil {
+			return base
+		}
+		result = append(result, organizationID)
+	}
+	if len(result) == 0 {
+		return base
+	}
+	return result
+}
+
 func (r *Repository) scopedUserExists(ctx context.Context, userID int64) bool {
 	if isRoot, _ := ctx.Value(middleware.CtxKeyIsRoot).(bool); isRoot {
 		var exists bool
@@ -147,7 +213,7 @@ func (r *Repository) validateOrganizationIDs(ctx context.Context, organizationID
 
 // ─── Tickets ────────────────────────────────────────────────────
 
-const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, created_at, updated_at`
+const ticketCols = `id, title, description, status, priority, assigned_to, created_by, updated_by, deleted_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, closed_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, approved_by, approved_at, approval_note, technology_name, vendor_name, specification, estimated_cost, manager_reviewed_by, manager_reviewed_at, manager_review_note, it_reviewed_by, it_reviewed_at, it_review_note, it_recommendation, it_manager_recommendation, legacy_workflow, created_at, updated_at, COALESCE((SELECT name FROM users WHERE users.id=created_by),''), COALESCE((SELECT name FROM organizations WHERE organizations.id=organization_id),''), COALESCE((SELECT name FROM users WHERE users.id=manager_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=it_reviewed_by),''), COALESCE((SELECT name FROM users WHERE users.id=approved_by),'')`
 
 type TicketFilter struct {
 	Search         string
@@ -159,6 +225,7 @@ type TicketFilter struct {
 	CreatedBy      *int64
 	RequestKind    string
 	ApprovalStatus string
+	ParticipantID  *int64
 	Page           int
 	PerPage        int
 }
@@ -184,14 +251,14 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 	aidx := 1
 
 	// Scope filter
-	if orgIDs := r.scopeOrgIDs(ctx); len(orgIDs) > 0 {
+	if orgIDs := r.ticketScopeOrgIDs(ctx); len(orgIDs) > 0 {
 		where += fmt.Sprintf(` AND t.organization_id = ANY($%d)`, aidx)
 		args = append(args, orgIDs)
 		aidx++
 	}
 
 	if f.Search != "" {
-		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d OR t.software_name ILIKE $%d OR t.business_objective ILIKE $%d OR t.target_users ILIKE $%d)`, aidx, aidx, aidx, aidx, aidx)
+		where += fmt.Sprintf(` AND (t.title ILIKE $%d OR t.description ILIKE $%d OR t.software_name ILIKE $%d OR t.business_objective ILIKE $%d OR t.target_users ILIKE $%d OR t.technology_name ILIKE $%d OR t.vendor_name ILIKE $%d OR t.specification ILIKE $%d)`, aidx, aidx, aidx, aidx, aidx, aidx, aidx, aidx)
 		args = append(args, "%"+f.Search+"%")
 		aidx++
 	}
@@ -220,7 +287,41 @@ func (r *Repository) ListTickets(ctx context.Context, f TicketFilter) (*Paginate
 		args = append(args, f.HoldingID)
 		aidx++
 	}
-	if f.CreatedBy != nil {
+	if f.ParticipantID != nil {
+		where += fmt.Sprintf(` AND (
+			t.created_by = $%d
+			OR (t.request_kind <> 'support' AND EXISTS (
+				SELECT 1 FROM organizations request_org
+				JOIN organizations managed_org ON request_org.path LIKE managed_org.path || '%%'
+				JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
+				WHERE request_org.id=t.organization_id AND managed_org.holding_id=request_org.holding_id
+				AND managed_org.manager_user_id=$%d
+				AND managed_org.level=(
+					SELECT MAX(candidate.level) FROM organizations candidate
+					JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
+					WHERE candidate.holding_id=request_org.holding_id AND request_org.path LIKE candidate.path || '%%'
+				)
+			))
+			OR EXISTS (
+				SELECT 1 FROM organizations request_org
+				JOIN holdings h ON h.id=request_org.holding_id
+				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+				WHERE request_org.id=t.organization_id AND it_org.manager_user_id=$%d
+			)
+			OR ($%d AND EXISTS (
+				SELECT 1 FROM organizations request_org
+				JOIN holdings h ON h.id=request_org.holding_id
+				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+				JOIN organizations member_org ON member_org.holding_id=h.id AND member_org.path LIKE it_org.path || '%%'
+				WHERE request_org.id=t.organization_id AND member_org.id IN (
+					SELECT organization_id FROM user_organizations WHERE user_id=$%d
+					UNION SELECT organization_id FROM users WHERE id=$%d AND organization_id IS NOT NULL
+				)
+			))
+		)`, aidx, aidx, aidx, aidx+1, aidx, aidx)
+		args = append(args, *f.ParticipantID, contextHasPermission(ctx, "requests.it_review"))
+		aidx += 2
+	} else if f.CreatedBy != nil {
 		where += fmt.Sprintf(` AND t.created_by = $%d`, aidx)
 		args = append(args, *f.CreatedBy)
 		aidx++
@@ -279,8 +380,8 @@ func (r *Repository) CreateTicket(ctx context.Context, t *models.Ticket) error {
 		}
 	}
 	return r.db.QueryRow(ctx,
-		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id, created_at, updated_at`,
-		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate,
+		`INSERT INTO tickets (title, description, status, priority, assigned_to, created_by, asset_id, organization_id, type_id, sla_policy_id, sla_response_at, sla_resolve_at, request_kind, approval_status, software_name, business_objective, target_users, desired_due_date, technology_name, vendor_name, specification, estimated_cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id, created_at, updated_at`,
+		t.Title, t.Description, t.Status, t.Priority, t.AssignedTo, t.CreatedBy, t.AssetID, t.OrganizationID, t.TypeID, t.SLAPolicyID, t.SLAResponseAt, t.SLAResolveAt, t.RequestKind, t.ApprovalStatus, t.SoftwareName, t.BusinessObjective, t.TargetUsers, t.DesiredDueDate, t.TechnologyName, t.VendorName, t.Specification, t.EstimatedCost,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -288,7 +389,7 @@ func (r *Repository) GetTicket(ctx context.Context, id int64) (*models.Ticket, e
 	t := &models.Ticket{}
 	query := `SELECT ` + ticketCols + ` FROM tickets WHERE id=$1 AND deleted_at IS NULL`
 	args := []any{id}
-	if orgIDs := r.scopeOrgIDs(ctx); orgIDs != nil {
+	if orgIDs := r.ticketScopeOrgIDs(ctx); orgIDs != nil {
 		query += ` AND organization_id=ANY($2)`
 		args = append(args, orgIDs)
 	}
@@ -310,56 +411,327 @@ func scanTicket(row ticketScanner, t *models.Ticket) error {
 		&t.OrganizationID, &t.TypeID, &t.SLAPolicyID, &t.SLAResponseAt,
 		&t.SLAResolveAt, &t.ClosedAt, &t.RequestKind, &t.ApprovalStatus,
 		&t.SoftwareName, &t.BusinessObjective, &t.TargetUsers, &t.DesiredDueDate,
-		&t.ApprovedBy, &t.ApprovedAt, &t.ApprovalNote, &t.CreatedAt, &t.UpdatedAt,
+		&t.ApprovedBy, &t.ApprovedAt, &t.ApprovalNote,
+		&t.TechnologyName, &t.VendorName, &t.Specification, &t.EstimatedCost,
+		&t.ManagerReviewedBy, &t.ManagerReviewedAt, &t.ManagerReviewNote,
+		&t.ITReviewedBy, &t.ITReviewedAt, &t.ITReviewNote, &t.ITRecommendation,
+		&t.ITManagerRecommendation, &t.LegacyWorkflow, &t.CreatedAt, &t.UpdatedAt,
+		&t.CreatedByName, &t.OrganizationName, &t.ManagerReviewerName,
+		&t.ITReviewerName, &t.ITManagerReviewerName,
 	)
 }
 
-func (r *Repository) UpdateRequestApproval(ctx context.Context, ticketID int64, status string, actorID int64, note string) error {
+type RequestRoute struct {
+	DepartmentManagerID *int64
+	ITOrganizationID    *int64
+	ITManagerID         *int64
+	HasITReviewer       bool
+}
+
+func (r *Repository) ResolveRequestRoute(ctx context.Context, organizationID int64) (*RequestRoute, error) {
+	route := &RequestRoute{}
+	err := r.db.QueryRow(ctx, `
+		SELECT manager.manager_user_id, h.it_organization_id, it_manager.id,
+			EXISTS (
+				SELECT 1 FROM users reviewer
+				WHERE reviewer.deleted_at IS NULL
+				AND (
+					reviewer.is_root
+					OR EXISTS (
+						SELECT 1 FROM role_permissions rp
+						JOIN permissions p ON p.id=rp.permission_id
+						WHERE rp.role_id=reviewer.role_id AND p.name='requests.it_review'
+					)
+				)
+				AND (
+					reviewer.is_root
+					OR EXISTS (
+						SELECT 1 FROM role_permissions rp
+						JOIN permissions p ON p.id=rp.permission_id
+						WHERE rp.role_id=reviewer.role_id AND p.name IN ('tickets.read','tickets.read.own')
+					)
+				)
+				AND EXISTS (
+					SELECT 1 FROM organizations member_org
+					WHERE member_org.holding_id=h.id
+					AND member_org.path LIKE it_org.path || '%'
+					AND member_org.id IN (
+						SELECT organization_id FROM user_organizations WHERE user_id=reviewer.id
+						UNION SELECT reviewer.organization_id WHERE reviewer.organization_id IS NOT NULL
+					)
+				)
+			)
+		FROM organizations request_org
+		JOIN holdings h ON h.id=request_org.holding_id
+		LEFT JOIN LATERAL (
+			SELECT candidate.manager_user_id
+			FROM organizations candidate
+			JOIN users manager_user ON manager_user.id=candidate.manager_user_id AND manager_user.deleted_at IS NULL
+				AND (manager_user.is_root OR EXISTS (
+					SELECT 1 FROM role_permissions rp
+					JOIN permissions p ON p.id=rp.permission_id
+					WHERE rp.role_id=manager_user.role_id AND p.name IN ('tickets.read','tickets.read.own')
+				))
+			WHERE candidate.holding_id=request_org.holding_id
+			AND request_org.path LIKE candidate.path || '%'
+			ORDER BY candidate.level DESC
+			LIMIT 1
+		) manager ON TRUE
+		LEFT JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+		LEFT JOIN users it_manager ON it_manager.id=it_org.manager_user_id AND it_manager.deleted_at IS NULL
+			AND (it_manager.is_root OR EXISTS (
+				SELECT 1 FROM role_permissions rp
+				JOIN permissions p ON p.id=rp.permission_id
+				WHERE rp.role_id=it_manager.role_id AND p.name IN ('tickets.read','tickets.read.own')
+			))
+		WHERE request_org.id=$1
+	`, organizationID).Scan(&route.DepartmentManagerID, &route.ITOrganizationID, &route.ITManagerID, &route.HasITReviewer)
+	if err != nil {
+		return nil, fmt.Errorf("request organization is not configured")
+	}
+	return route, nil
+}
+
+func (r *Repository) userInOrganizationTree(ctx context.Context, userID, organizationID int64) bool {
+	var allowed bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM organizations member_org
+			JOIN organizations target_org ON member_org.holding_id=target_org.holding_id AND member_org.path LIKE target_org.path || '%'
+			WHERE target_org.id=$2 AND member_org.id IN (
+				SELECT organization_id FROM user_organizations WHERE user_id=$1
+				UNION SELECT organization_id FROM users WHERE id=$1 AND organization_id IS NOT NULL
+			)
+		)
+	`, userID, organizationID).Scan(&allowed)
+	return err == nil && allowed
+}
+
+func (r *Repository) CanParticipateInRequest(ctx context.Context, ticketID, userID int64) bool {
+	var allowed bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM tickets t
+			JOIN organizations request_org ON request_org.id=t.organization_id
+			JOIN holdings h ON h.id=request_org.holding_id
+			LEFT JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+			WHERE t.id=$1 AND t.deleted_at IS NULL AND (
+				t.created_by=$2
+				OR it_org.manager_user_id=$2
+				OR (t.request_kind <> 'support' AND EXISTS (
+					SELECT 1 FROM organizations managed_org
+					JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
+					WHERE managed_org.holding_id=request_org.holding_id
+					AND request_org.path LIKE managed_org.path || '%' AND managed_org.manager_user_id=$2
+					AND managed_org.level=(
+						SELECT MAX(candidate.level) FROM organizations candidate
+						JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
+						WHERE candidate.holding_id=request_org.holding_id AND request_org.path LIKE candidate.path || '%'
+					)
+				))
+			)
+		)
+	`, ticketID, userID).Scan(&allowed)
+	if err == nil && allowed {
+		return true
+	}
+	return contextHasPermission(ctx, "requests.it_review") && r.CanITReviewRequest(ctx, ticketID, userID)
+}
+
+func (r *Repository) CanITReviewRequest(ctx context.Context, ticketID, userID int64) bool {
+	var itOrganizationID *int64
+	err := r.db.QueryRow(ctx, `
+		SELECT it_org.id
+		FROM tickets t
+		JOIN organizations o ON o.id=t.organization_id
+		JOIN holdings h ON h.id=o.holding_id
+		JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+		WHERE t.id=$1 AND t.deleted_at IS NULL
+	`, ticketID).Scan(&itOrganizationID)
+	return err == nil && itOrganizationID != nil && r.userInOrganizationTree(ctx, userID, *itOrganizationID)
+}
+
+func (r *Repository) UpdateDepartmentManagerReview(ctx context.Context, ticketID, actorID int64, decision, note string) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	orgIDs := r.scopeOrgIDs(ctx)
-	query := `UPDATE tickets SET approval_status=$1::text, approved_by=$2, approved_at=NOW(), approval_note=$3, status=CASE WHEN $1::text='rejected' THEN 'cancelled' ELSE status END, updated_at=NOW(), updated_by=$2 WHERE id=$4 AND deleted_at IS NULL AND request_kind='software' AND approval_status='pending' AND status='new'`
-	args := []any{status, actorID, note, ticketID}
-	if orgIDs != nil {
-		query += ` AND organization_id=ANY($5)`
-		args = append(args, orgIDs)
+	nextStatus := "pending_it_review"
+	if decision == "rejected" {
+		nextStatus = "rejected"
 	}
-	query += ` RETURNING status`
-	var updatedStatus string
-	if err := tx.QueryRow(ctx, query, args...).Scan(&updatedStatus); err != nil {
+	var requestStatus string
+	err = tx.QueryRow(ctx, `
+		UPDATE tickets t
+		SET approval_status=$1::text, manager_reviewed_by=$2, manager_reviewed_at=NOW(),
+			manager_review_note=$3,
+			status=CASE WHEN $1::text='rejected' THEN 'cancelled' ELSE status END,
+			updated_at=NOW(), updated_by=$2
+		WHERE t.id=$4 AND t.deleted_at IS NULL AND t.status='new' AND t.approval_status='pending_manager'
+			AND EXISTS (
+				SELECT 1 FROM organizations request_org
+				JOIN organizations managed_org ON request_org.path LIKE managed_org.path || '%'
+				JOIN users manager_user ON manager_user.id=managed_org.manager_user_id AND manager_user.deleted_at IS NULL
+				WHERE request_org.id=t.organization_id AND managed_org.holding_id=request_org.holding_id
+				AND managed_org.manager_user_id=$2
+				AND managed_org.level=(
+					SELECT MAX(candidate.level) FROM organizations candidate
+					JOIN users active_manager ON active_manager.id=candidate.manager_user_id AND active_manager.deleted_at IS NULL
+					WHERE candidate.holding_id=request_org.holding_id AND request_org.path LIKE candidate.path || '%'
+				)
+			)
+		RETURNING status
+	`, nextStatus, actorID, note, ticketID).Scan(&requestStatus)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("pending software request not found")
+			return fmt.Errorf("request is not awaiting this department manager")
 		}
 		return err
 	}
-	if status == "rejected" {
+	if _, err := tx.Exec(ctx, `INSERT INTO request_workflow_history (ticket_id, stage, decision, actor_id, note) VALUES ($1,'department_manager',$2,$3,$4)`, ticketID, decision, actorID, note); err != nil {
+		return err
+	}
+	if decision == "rejected" {
 		if _, err := tx.Exec(ctx, `INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,'new','cancelled',$2,$3)`, ticketID, actorID, note); err != nil {
 			return err
 		}
 	}
-	if updatedStatus == "" {
-		return fmt.Errorf("pending software request not found")
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) UpdateITReview(ctx context.Context, ticketID, actorID int64, recommendation, note string) error {
+	if !r.CanITReviewRequest(ctx, ticketID, actorID) {
+		return fmt.Errorf("request is outside the configured IT organization")
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
+		UPDATE tickets t SET approval_status='pending_it_manager', it_reviewed_by=$1,
+			it_reviewed_at=NOW(), it_review_note=$2, it_recommendation=$3,
+			updated_at=NOW(), updated_by=$1
+		WHERE t.id=$4 AND t.deleted_at IS NULL AND t.status='new' AND t.approval_status='pending_it_review'
+		AND EXISTS (
+			SELECT 1 FROM organizations request_org
+			JOIN users reviewer ON reviewer.id=$1 AND reviewer.deleted_at IS NULL
+			JOIN holdings h ON h.id=request_org.holding_id
+			JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+			JOIN organizations member_org ON member_org.holding_id=h.id AND member_org.path LIKE it_org.path || '%'
+			WHERE request_org.id=t.organization_id AND member_org.id IN (
+				SELECT organization_id FROM user_organizations WHERE user_id=$1
+				UNION SELECT organization_id FROM users WHERE id=$1 AND organization_id IS NOT NULL
+			)
+		)
+	`, actorID, note, recommendation, ticketID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("request is not awaiting IT review")
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO request_workflow_history (ticket_id, stage, decision, actor_id, note) VALUES ($1,'it_review',$2,$3,$4)`, ticketID, recommendation, actorID, note); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
 
+func (r *Repository) UpdateITManagerReview(ctx context.Context, ticketID, actorID int64, recommendation, note string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	approvalStatus := "approved"
+	if recommendation == "not_recommended" {
+		approvalStatus = "rejected"
+	}
+	var requestStatus string
+	err = tx.QueryRow(ctx, `
+		UPDATE tickets t
+		SET approval_status=$1::text, approved_by=$2, approved_at=NOW(), approval_note=$3,
+			it_manager_recommendation=$4,
+			status=CASE WHEN $1::text='rejected' THEN 'cancelled' ELSE status END,
+			updated_at=NOW(), updated_by=$2
+		WHERE t.id=$5 AND t.deleted_at IS NULL AND t.status='new' AND t.approval_status='pending_it_manager'
+			AND EXISTS (
+				SELECT 1 FROM organizations request_org
+				JOIN holdings h ON h.id=request_org.holding_id
+				JOIN organizations it_org ON it_org.id=h.it_organization_id AND it_org.holding_id=h.id
+				JOIN users it_manager ON it_manager.id=it_org.manager_user_id AND it_manager.deleted_at IS NULL
+				WHERE request_org.id=t.organization_id AND it_manager.id=$2
+			)
+		RETURNING status
+	`, approvalStatus, actorID, note, recommendation, ticketID).Scan(&requestStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("request is not awaiting this IT manager")
+		}
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO request_workflow_history (ticket_id, stage, decision, actor_id, note) VALUES ($1,'it_manager',$2,$3,$4)`, ticketID, recommendation, actorID, note); err != nil {
+		return err
+	}
+	if recommendation == "not_recommended" {
+		if _, err := tx.Exec(ctx, `INSERT INTO ticket_status_history (ticket_id, from_status, to_status, changed_by, note) VALUES ($1,'new','cancelled',$2,$3)`, ticketID, actorID, note); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) ListRequestWorkflowHistory(ctx context.Context, ticketID int64) ([]models.RequestWorkflowHistory, error) {
+	if _, err := r.GetTicket(ctx, ticketID); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT h.id, h.ticket_id, h.stage, h.decision, h.actor_id, u.name, h.note, h.created_at
+		FROM request_workflow_history h
+		JOIN users u ON u.id=h.actor_id
+		WHERE h.ticket_id=$1
+		ORDER BY h.created_at, h.id
+	`, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	history := make([]models.RequestWorkflowHistory, 0)
+	for rows.Next() {
+		var item models.RequestWorkflowHistory
+		if err := rows.Scan(&item.ID, &item.TicketID, &item.Stage, &item.Decision, &item.ActorID, &item.ActorName, &item.Note, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, item)
+	}
+	return history, rows.Err()
+}
+
 func (r *Repository) UpdateTicket(ctx context.Context, t *models.Ticket, userID int64) error {
-	if !r.organizationAllowed(ctx, t.OrganizationID) {
+	var existingOrganizationID *int64
+	if err := r.db.QueryRow(ctx, `SELECT organization_id FROM tickets WHERE id=$1 AND deleted_at IS NULL`, t.ID).Scan(&existingOrganizationID); err != nil {
+		return fmt.Errorf("ticket not found")
+	}
+	if t.OrganizationID == nil || existingOrganizationID == nil || *t.OrganizationID != *existingOrganizationID {
+		return fmt.Errorf("request organization cannot be changed after submission")
+	}
+	if !r.organizationAllowed(ctx, t.OrganizationID) && !(contextHasPermission(ctx, "requests.it_review") && r.CanITReviewRequest(ctx, t.ID, userID)) {
 		return fmt.Errorf("organization is outside your scope")
 	}
-	if t.AssignedTo != nil && !r.userBelongsToOrganization(ctx, *t.AssignedTo, t.OrganizationID) {
+	if t.AssignedTo != nil && !r.userBelongsToOrganization(ctx, *t.AssignedTo, t.OrganizationID) && !r.CanITReviewRequest(ctx, t.ID, *t.AssignedTo) {
 		return fmt.Errorf("assignee is outside the ticket organization")
 	}
 	if t.AssetID != nil {
-		asset, err := r.GetAsset(ctx, *t.AssetID)
-		if err != nil || t.OrganizationID == nil || asset.OrganizationID == nil || *asset.OrganizationID != *t.OrganizationID {
+		var assetOrganizationID *int64
+		err := r.db.QueryRow(ctx, `SELECT organization_id FROM assets WHERE id=$1 AND deleted_at IS NULL`, *t.AssetID).Scan(&assetOrganizationID)
+		if err != nil || t.OrganizationID == nil || assetOrganizationID == nil || *assetOrganizationID != *t.OrganizationID {
 			return fmt.Errorf("asset is outside the ticket organization")
 		}
 	}
-	orgIDs := r.scopeOrgIDs(ctx)
+	orgIDs := r.ticketScopeOrgIDs(ctx)
 	query := `UPDATE tickets SET title=$1, description=$2, priority=$3, assigned_to=$4, asset_id=$5, organization_id=$6, type_id=$7, updated_at=NOW(), updated_by=$8 WHERE id=$9 AND deleted_at IS NULL`
 	args := []any{t.Title, t.Description, t.Priority, t.AssignedTo, t.AssetID, t.OrganizationID, t.TypeID, userID, t.ID}
 	if orgIDs != nil {
@@ -389,7 +761,7 @@ func (r *Repository) UpdateTicketStatus(ctx context.Context, ticketID int64, old
 	if newStatus == "closed" {
 		closedAt = &now
 	}
-	orgIDs := r.scopeOrgIDs(ctx)
+	orgIDs := r.ticketScopeOrgIDs(ctx)
 	query := `UPDATE tickets SET status=$1, closed_at=$2, updated_at=NOW(), updated_by=$3 WHERE id=$4 AND status=$5 AND deleted_at IS NULL`
 	args := []any{newStatus, closedAt, userID, ticketID, oldStatus}
 	if orgIDs != nil {
@@ -437,7 +809,7 @@ func (r *Repository) ListStatusHistory(ctx context.Context, ticketID int64) ([]m
 }
 
 func (r *Repository) DeleteTicket(ctx context.Context, id, userID int64) error {
-	orgIDs := r.scopeOrgIDs(ctx)
+	orgIDs := r.ticketScopeOrgIDs(ctx)
 	query := `UPDATE tickets SET deleted_at=NOW(), deleted_by=$1 WHERE id=$2 AND deleted_at IS NULL`
 	args := []any{userID, id}
 	if orgIDs != nil {
@@ -536,7 +908,7 @@ func (r *Repository) CreateTicketComment(ctx context.Context, c *models.TicketCo
 }
 
 func (r *Repository) DeleteTicketComment(ctx context.Context, id int64) error {
-	orgIDs := r.scopeOrgIDs(ctx)
+	orgIDs := r.ticketScopeOrgIDs(ctx)
 	query := `UPDATE ticket_comments c SET deleted_at=NOW() WHERE c.id=$1 AND c.deleted_at IS NULL`
 	args := []any{id}
 	if orgIDs != nil {
@@ -908,7 +1280,6 @@ func (r *Repository) LoadAuthorizationState(ctx context.Context, userID int64) (
 	for i := range permissions {
 		state.Permissions[i] = permissions[i].Name
 	}
-
 	rows, err := r.db.Query(ctx, `
 		SELECT o.id, o.path
 		FROM organizations o
@@ -1558,7 +1929,7 @@ func (r *Repository) UpdateAssetCategory(ctx context.Context, c *models.AssetCat
 }
 
 func (r *Repository) ListHoldings(ctx context.Context) ([]models.Holding, error) {
-	query := `SELECT id, name, slug, created_at FROM holdings`
+	query := `SELECT id, name, slug, it_organization_id, created_at FROM holdings`
 	args := []any{}
 	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
 		query += ` WHERE EXISTS (SELECT 1 FROM organizations o WHERE o.holding_id=holdings.id AND o.id=ANY($1))`
@@ -1573,7 +1944,7 @@ func (r *Repository) ListHoldings(ctx context.Context) ([]models.Holding, error)
 	hh := make([]models.Holding, 0)
 	for rows.Next() {
 		var h models.Holding
-		if err := rows.Scan(&h.ID, &h.Name, &h.Slug, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Slug, &h.ITOrganizationID, &h.CreatedAt); err != nil {
 			return nil, err
 		}
 		hh = append(hh, h)
@@ -1585,9 +1956,32 @@ func (r *Repository) CreateHolding(ctx context.Context, h *models.Holding) error
 	return r.db.QueryRow(ctx, `INSERT INTO holdings (name, slug) VALUES ($1,$2) RETURNING id, created_at`, h.Name, h.Slug).Scan(&h.ID, &h.CreatedAt)
 }
 
+func (r *Repository) UpdateHoldingITOrganization(ctx context.Context, holdingID int64, organizationID *int64) error {
+	if organizationID != nil {
+		organization, err := r.GetOrganization(ctx, *organizationID)
+		if err != nil || organization.HoldingID != holdingID || !r.organizationAllowed(ctx, organizationID) {
+			return fmt.Errorf("IT organization must belong to this holding and your scope")
+		}
+	}
+	query := `UPDATE holdings SET it_organization_id=$1 WHERE id=$2`
+	args := []any{organizationID, holdingID}
+	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
+		query += ` AND EXISTS (SELECT 1 FROM organizations o WHERE o.holding_id=holdings.id AND o.id=ANY($3))`
+		args = append(args, organizationIDs)
+	}
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("holding not found")
+	}
+	return nil
+}
+
 func (r *Repository) GetOrganization(ctx context.Context, id int64) (*models.Organization, error) {
 	o := &models.Organization{}
-	err := r.db.QueryRow(ctx, `SELECT id, name, parent_id, holding_id, path, level, created_at FROM organizations WHERE id=$1`, id).Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.CreatedAt)
+	err := r.db.QueryRow(ctx, `SELECT id, name, parent_id, holding_id, path, level, manager_user_id, created_at FROM organizations WHERE id=$1`, id).Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.ManagerUserID, &o.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("organization not found")
 	}
@@ -1595,27 +1989,63 @@ func (r *Repository) GetOrganization(ctx context.Context, id int64) (*models.Org
 }
 
 func (r *Repository) CreateOrganization(ctx context.Context, o *models.Organization) error {
-	err := r.db.QueryRow(ctx,
-		`INSERT INTO organizations (name, parent_id, holding_id, path, level) VALUES ($1,$2,$3,'/',0) RETURNING id, created_at`,
-		o.Name, o.ParentID, o.HoldingID,
-	).Scan(&o.ID, &o.CreatedAt)
-
-	// Update path after we know the ID
-	path := "/" + fmt.Sprintf("%d", o.ID) + "/"
-	if o.ParentID != nil && *o.ParentID > 0 {
-		parent, err2 := r.GetOrganization(ctx, *o.ParentID)
-		if err2 == nil {
-			path = parent.Path + fmt.Sprintf("%d", o.ID) + "/"
-			o.Level = parent.Level + 1
+	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
+		var holdingAllowed bool
+		if err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM organizations WHERE holding_id=$1 AND id=ANY($2))`, o.HoldingID, organizationIDs).Scan(&holdingAllowed); err != nil || !holdingAllowed {
+			return fmt.Errorf("holding is outside your scope")
 		}
 	}
-	r.db.Exec(ctx, `UPDATE organizations SET path=$1, level=$2 WHERE id=$3`, path, o.Level, o.ID)
+	var parent *models.Organization
+	if o.ParentID != nil {
+		var err error
+		parent, err = r.GetOrganization(ctx, *o.ParentID)
+		if err != nil || parent.HoldingID != o.HoldingID || !r.organizationAllowed(ctx, o.ParentID) {
+			return fmt.Errorf("parent organization must belong to the same holding and your scope")
+		}
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO organizations (name, parent_id, holding_id, path, level) VALUES ($1,$2,$3,'/',0) RETURNING id, created_at`,
+		o.Name, o.ParentID, o.HoldingID,
+	).Scan(&o.ID, &o.CreatedAt); err != nil {
+		return err
+	}
+
+	path := "/" + fmt.Sprintf("%d", o.ID) + "/"
+	if parent != nil {
+		path = parent.Path + fmt.Sprintf("%d", o.ID) + "/"
+		o.Level = parent.Level + 1
+	}
+	if _, err := tx.Exec(ctx, `UPDATE organizations SET path=$1, level=$2 WHERE id=$3`, path, o.Level, o.ID); err != nil {
+		return err
+	}
 	o.Path = path
-	return err
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) UpdateOrganizationManager(ctx context.Context, organizationID int64, managerUserID *int64) error {
+	if !r.organizationAllowed(ctx, &organizationID) {
+		return fmt.Errorf("organization is outside your scope")
+	}
+	if managerUserID != nil && !r.userBelongsToOrganization(ctx, *managerUserID, &organizationID) {
+		return fmt.Errorf("manager must be an active member of this organization")
+	}
+	tag, err := r.db.Exec(ctx, `UPDATE organizations SET manager_user_id=$1 WHERE id=$2`, managerUserID, organizationID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("organization not found")
+	}
+	return nil
 }
 
 func (r *Repository) ListOrganizations(ctx context.Context) ([]models.Organization, error) {
-	query := `SELECT id, name, parent_id, holding_id, path, level, created_at FROM organizations`
+	query := `SELECT id, name, parent_id, holding_id, path, level, manager_user_id, created_at FROM organizations`
 	args := []any{}
 	if organizationIDs := r.scopeOrgIDs(ctx); organizationIDs != nil {
 		query += ` WHERE id=ANY($1)`
@@ -1630,7 +2060,7 @@ func (r *Repository) ListOrganizations(ctx context.Context) ([]models.Organizati
 	oo := make([]models.Organization, 0)
 	for rows.Next() {
 		var o models.Organization
-		if err := rows.Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.ParentID, &o.HoldingID, &o.Path, &o.Level, &o.ManagerUserID, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		oo = append(oo, o)

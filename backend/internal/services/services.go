@@ -56,13 +56,31 @@ func (s *Service) ListTickets(ctx context.Context, f repository.TicketFilter) (*
 	return s.repo.ListTickets(ctx, f)
 }
 func (s *Service) ListMyTickets(ctx context.Context, f repository.TicketFilter, userID int64) (*repository.PaginatedResult[models.Ticket], error) {
-	f.CreatedBy = &userID
+	f.ParticipantID = &userID
 	return s.repo.ListTickets(ctx, f)
 }
 
 func (s *Service) CreateTicket(ctx context.Context, t *models.Ticket) error {
 	if err := prepareNewRequest(t); err != nil {
 		return err
+	}
+	if t.OrganizationID == nil {
+		return fmt.Errorf("%w: organization is required", ErrInvalidRequest)
+	}
+	route, err := s.repo.ResolveRequestRoute(ctx, *t.OrganizationID)
+	if err != nil || route.ITOrganizationID == nil {
+		return fmt.Errorf("%w: this holding does not have an IT organization configured", ErrInvalidRequest)
+	}
+	if t.RequestKind != "support" {
+		if !route.HasITReviewer {
+			return fmt.Errorf("%w: the IT organization does not have an active reviewer configured", ErrInvalidRequest)
+		}
+		if route.DepartmentManagerID == nil {
+			return fmt.Errorf("%w: this department does not have a manager configured", ErrInvalidRequest)
+		}
+		if route.ITManagerID == nil {
+			return fmt.Errorf("%w: the IT organization does not have a manager configured", ErrInvalidRequest)
+		}
 	}
 	// Auto-assign SLA based on priority
 	now := time.Now()
@@ -83,7 +101,7 @@ func prepareNewRequest(t *models.Ticket) error {
 		t.Priority = "medium"
 	}
 	if t.RequestKind == "" {
-		t.RequestKind = "incident"
+		t.RequestKind = "support"
 	}
 	if err := validateRequest(t); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
@@ -91,8 +109,8 @@ func prepareNewRequest(t *models.Ticket) error {
 	if err := validatePriority(t.Priority); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
-	if t.RequestKind == "software" {
-		t.ApprovalStatus = "pending"
+	if t.RequestKind == "software" || t.RequestKind == "technology_review" {
+		t.ApprovalStatus = "pending_manager"
 	} else {
 		t.ApprovalStatus = "not_required"
 	}
@@ -111,6 +129,8 @@ func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int
 	}
 	if t.OrganizationID == nil {
 		t.OrganizationID = existing.OrganizationID
+	} else if existing.OrganizationID == nil || *t.OrganizationID != *existing.OrganizationID {
+		return fmt.Errorf("%w: request organization cannot be changed after submission", ErrInvalidRequest)
 	}
 	if t.Status == "" {
 		t.Status = existing.Status
@@ -124,6 +144,18 @@ func (s *Service) UpdateTicket(ctx context.Context, t *models.Ticket, userID int
 	t.ApprovedBy = existing.ApprovedBy
 	t.ApprovedAt = existing.ApprovedAt
 	t.ApprovalNote = existing.ApprovalNote
+	t.TechnologyName = existing.TechnologyName
+	t.VendorName = existing.VendorName
+	t.Specification = existing.Specification
+	t.EstimatedCost = existing.EstimatedCost
+	t.ManagerReviewedBy = existing.ManagerReviewedBy
+	t.ManagerReviewedAt = existing.ManagerReviewedAt
+	t.ManagerReviewNote = existing.ManagerReviewNote
+	t.ITReviewedBy = existing.ITReviewedBy
+	t.ITReviewedAt = existing.ITReviewedAt
+	t.ITReviewNote = existing.ITReviewNote
+	t.ITRecommendation = existing.ITRecommendation
+	t.ITManagerRecommendation = existing.ITManagerRecommendation
 	if err := validateRequest(t); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
@@ -154,15 +186,43 @@ func (s *Service) DeleteTicket(ctx context.Context, id, userID int64) error {
 	return s.repo.DeleteTicket(ctx, id, userID)
 }
 
-func (s *Service) UpdateRequestApproval(ctx context.Context, ticketID int64, status string, actorID int64, note string) (*models.Ticket, error) {
-	if status != "approved" && status != "rejected" {
-		return nil, fmt.Errorf("%w: approval status must be approved or rejected", ErrInvalidRequest)
+func (s *Service) UpdateDepartmentManagerReview(ctx context.Context, ticketID, actorID int64, decision, note string) (*models.Ticket, error) {
+	if decision != "approved" && decision != "rejected" {
+		return nil, fmt.Errorf("%w: decision must be approved or rejected", ErrInvalidRequest)
 	}
 	note = strings.TrimSpace(note)
-	if status == "rejected" && note == "" {
+	if decision == "rejected" && note == "" {
 		return nil, fmt.Errorf("%w: rejection note is required", ErrInvalidRequest)
 	}
-	if err := s.repo.UpdateRequestApproval(ctx, ticketID, status, actorID, note); err != nil {
+	if err := s.repo.UpdateDepartmentManagerReview(ctx, ticketID, actorID, decision, note); err != nil {
+		return nil, err
+	}
+	return s.repo.GetTicket(ctx, ticketID)
+}
+
+func (s *Service) UpdateITReview(ctx context.Context, ticketID, actorID int64, recommendation, note string) (*models.Ticket, error) {
+	if recommendation != "recommended" && recommendation != "not_recommended" {
+		return nil, fmt.Errorf("%w: IT recommendation is invalid", ErrInvalidRequest)
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return nil, fmt.Errorf("%w: IT review note is required", ErrInvalidRequest)
+	}
+	if err := s.repo.UpdateITReview(ctx, ticketID, actorID, recommendation, note); err != nil {
+		return nil, err
+	}
+	return s.repo.GetTicket(ctx, ticketID)
+}
+
+func (s *Service) UpdateITManagerReview(ctx context.Context, ticketID, actorID int64, recommendation, note string) (*models.Ticket, error) {
+	if recommendation != "recommended" && recommendation != "not_recommended" {
+		return nil, fmt.Errorf("%w: IT manager recommendation is invalid", ErrInvalidRequest)
+	}
+	note = strings.TrimSpace(note)
+	if recommendation == "not_recommended" && note == "" {
+		return nil, fmt.Errorf("%w: a note is required when technology is not recommended", ErrInvalidRequest)
+	}
+	if err := s.repo.UpdateITManagerReview(ctx, ticketID, actorID, recommendation, note); err != nil {
 		return nil, err
 	}
 	return s.repo.GetTicket(ctx, ticketID)
@@ -174,11 +234,14 @@ func validateRequest(t *models.Ticket) error {
 	t.SoftwareName = strings.TrimSpace(t.SoftwareName)
 	t.BusinessObjective = strings.TrimSpace(t.BusinessObjective)
 	t.TargetUsers = strings.TrimSpace(t.TargetUsers)
+	t.TechnologyName = strings.TrimSpace(t.TechnologyName)
+	t.VendorName = strings.TrimSpace(t.VendorName)
+	t.Specification = strings.TrimSpace(t.Specification)
 	if t.Title == "" {
 		return fmt.Errorf("title is required")
 	}
 	switch t.RequestKind {
-	case "incident", "service":
+	case "support":
 		return nil
 	case "software":
 		if t.SoftwareName == "" {
@@ -189,6 +252,20 @@ func validateRequest(t *models.Ticket) error {
 		}
 		if t.TargetUsers == "" {
 			return fmt.Errorf("target users are required")
+		}
+		return nil
+	case "technology_review":
+		if t.TechnologyName == "" {
+			return fmt.Errorf("technology or vendor name is required")
+		}
+		if t.BusinessObjective == "" {
+			return fmt.Errorf("business purpose is required")
+		}
+		if t.Specification == "" {
+			return fmt.Errorf("product information or specification is required")
+		}
+		if t.EstimatedCost != nil && *t.EstimatedCost < 0 {
+			return fmt.Errorf("estimated cost cannot be negative")
 		}
 		return nil
 	default:
@@ -206,14 +283,35 @@ func validatePriority(priority string) error {
 }
 
 func validateRequestStatusChange(ticket *models.Ticket, newStatus string) error {
-	if ticket.RequestKind == "software" && ticket.ApprovalStatus != "approved" && newStatus != "cancelled" {
-		return fmt.Errorf("software request must be approved before work can begin")
+	if ticket.RequestKind != "support" && ticket.ApprovalStatus != "approved" && newStatus != "cancelled" {
+		return fmt.Errorf("formal request must complete manager and IT review before work can begin")
 	}
 	return nil
 }
 
 func (s *Service) GetStatusHistory(ctx context.Context, ticketID int64) ([]models.TicketStatusHistory, error) {
 	return s.repo.ListStatusHistory(ctx, ticketID)
+}
+
+func (s *Service) GetRequestWorkflowHistory(ctx context.Context, ticketID int64) ([]models.RequestWorkflowHistory, error) {
+	return s.repo.ListRequestWorkflowHistory(ctx, ticketID)
+}
+
+func (s *Service) CanParticipateInRequest(ctx context.Context, ticketID, userID int64) bool {
+	return s.repo.CanParticipateInRequest(ctx, ticketID, userID)
+}
+
+func (s *Service) DecorateRequestActions(ctx context.Context, ticket *models.Ticket, userID int64, canITReview bool) {
+	if ticket.OrganizationID == nil {
+		return
+	}
+	route, err := s.repo.ResolveRequestRoute(ctx, *ticket.OrganizationID)
+	if err != nil {
+		return
+	}
+	ticket.CanManagerReview = ticket.Status == "new" && ticket.ApprovalStatus == "pending_manager" && route.DepartmentManagerID != nil && *route.DepartmentManagerID == userID
+	ticket.CanITReview = ticket.Status == "new" && ticket.ApprovalStatus == "pending_it_review" && canITReview && s.repo.CanITReviewRequest(ctx, ticket.ID, userID)
+	ticket.CanITManagerReview = ticket.Status == "new" && ticket.ApprovalStatus == "pending_it_manager" && route.ITManagerID != nil && *route.ITManagerID == userID
 }
 
 // ─── Ticket Types ───────────────────────────────────────────────
@@ -431,11 +529,17 @@ func (s *Service) ListHoldings(ctx context.Context) ([]models.Holding, error) {
 func (s *Service) CreateHolding(ctx context.Context, h *models.Holding) error {
 	return s.repo.CreateHolding(ctx, h)
 }
+func (s *Service) UpdateHoldingITOrganization(ctx context.Context, holdingID int64, organizationID *int64) error {
+	return s.repo.UpdateHoldingITOrganization(ctx, holdingID, organizationID)
+}
 func (s *Service) GetOrganization(ctx context.Context, id int64) (*models.Organization, error) {
 	return s.repo.GetOrganization(ctx, id)
 }
 func (s *Service) CreateOrganization(ctx context.Context, o *models.Organization) error {
 	return s.repo.CreateOrganization(ctx, o)
+}
+func (s *Service) UpdateOrganizationManager(ctx context.Context, organizationID int64, managerUserID *int64) error {
+	return s.repo.UpdateOrganizationManager(ctx, organizationID, managerUserID)
 }
 func (s *Service) ListOrganizations(ctx context.Context) ([]models.Organization, error) {
 	return s.repo.ListOrganizations(ctx)

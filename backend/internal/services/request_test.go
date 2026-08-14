@@ -15,8 +15,7 @@ func TestValidateRequest(t *testing.T) {
 		ticket  models.Ticket
 		wantErr string
 	}{
-		{name: "incident", ticket: models.Ticket{Title: "Printer is offline", RequestKind: "incident"}},
-		{name: "service", ticket: models.Ticket{Title: "VPN access", RequestKind: "service"}},
+		{name: "support", ticket: models.Ticket{Title: "Printer is offline", RequestKind: "support"}},
 		{
 			name: "software",
 			ticket: models.Ticket{
@@ -27,10 +26,21 @@ func TestValidateRequest(t *testing.T) {
 				TargetUsers:       "All employees",
 			},
 		},
-		{name: "missing title", ticket: models.Ticket{RequestKind: "incident"}, wantErr: "title is required"},
+		{
+			name: "technology review",
+			ticket: models.Ticket{
+				Title:             "Review vendor server",
+				RequestKind:       "technology_review",
+				TechnologyName:    "Dell R760",
+				BusinessObjective: "Run research workloads",
+				Specification:     "Dual CPU, 256 GB RAM",
+			},
+		},
+		{name: "missing title", ticket: models.Ticket{RequestKind: "support"}, wantErr: "title is required"},
 		{name: "invalid kind", ticket: models.Ticket{Title: "Unknown", RequestKind: "project"}, wantErr: "invalid request kind"},
 		{name: "software name required", ticket: models.Ticket{Title: "New software", RequestKind: "software", BusinessObjective: "Automate work"}, wantErr: "software name is required"},
 		{name: "objective required", ticket: models.Ticket{Title: "New software", RequestKind: "software", SoftwareName: "Work Hub"}, wantErr: "business objective is required"},
+		{name: "technology name required", ticket: models.Ticket{Title: "Review server", RequestKind: "technology_review", BusinessObjective: "Research", Specification: "Server specification"}, wantErr: "technology or vendor name is required"},
 	}
 
 	for _, test := range tests {
@@ -63,7 +73,7 @@ func TestValidateRequestTrimsSoftwareFields(t *testing.T) {
 }
 
 func TestSoftwareRequestRequiresApprovalBeforeWork(t *testing.T) {
-	ticket := &models.Ticket{RequestKind: "software", ApprovalStatus: "pending"}
+	ticket := &models.Ticket{RequestKind: "software", ApprovalStatus: "pending_manager"}
 	if err := validateRequestStatusChange(ticket, "open"); err == nil {
 		t.Fatal("pending software request advanced without approval")
 	}
@@ -90,14 +100,14 @@ func TestPrepareNewSoftwareRequestOverridesClientState(t *testing.T) {
 	if err := prepareNewRequest(ticket); err != nil {
 		t.Fatal(err)
 	}
-	if ticket.Status != "new" || ticket.ApprovalStatus != "pending" {
+	if ticket.Status != "new" || ticket.ApprovalStatus != "pending_manager" {
 		t.Fatalf("new software request state = %s/%s", ticket.Status, ticket.ApprovalStatus)
 	}
 }
 
 func TestRejectedRequestRequiresNote(t *testing.T) {
 	service := &Service{}
-	if _, err := service.UpdateRequestApproval(context.Background(), 1, "rejected", 1, "   "); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("UpdateRequestApproval() error = %v, want ErrInvalidRequest", err)
+	if _, err := service.UpdateDepartmentManagerReview(context.Background(), 1, 1, "rejected", "   "); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("UpdateDepartmentManagerReview() error = %v, want ErrInvalidRequest", err)
 	}
 }

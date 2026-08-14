@@ -80,9 +80,12 @@ func main() {
 				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Get("/{id}", h.GetTicket)
 				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}", h.UpdateTicket)
 				r.With(leahmw.RequirePermission("tickets.update")).Put("/{id}/status", h.UpdateTicketStatus)
-				r.With(leahmw.RequirePermission("requests.approve")).Put("/{id}/approval", h.UpdateRequestApproval)
+				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Put("/{id}/department-manager-review", h.UpdateDepartmentManagerReview)
+				r.With(leahmw.RequirePermission("requests.it_review"), leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Put("/{id}/it-review", h.UpdateITReview)
+				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Put("/{id}/it-manager-review", h.UpdateITManagerReview)
 				r.With(leahmw.RequirePermission("tickets.delete")).Delete("/{id}", h.DeleteTicket)
 				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Get("/{id}/history", h.GetTicketHistory)
+				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Get("/{id}/workflow-history", h.GetRequestWorkflowHistory)
 				r.With(leahmw.RequireAnyPermission("tickets.read", "tickets.read.own")).Get("/{id}/comments", h.ListTicketComments)
 				r.With(leahmw.RequirePermission("tickets.comment")).Post("/{id}/comments", h.CreateTicketComment)
 				r.With(leahmw.RequirePermission("tickets.delete")).Delete("/{id}/comments/{cid}", h.DeleteTicketComment)
@@ -132,10 +135,12 @@ func main() {
 			r.Route("/holdings", func(r chi.Router) {
 				r.Get("/", h.ListHoldings)
 				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateHolding)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}/it-organization", h.UpdateHoldingITOrganization)
 			})
 			r.Route("/organizations", func(r chi.Router) {
 				r.Get("/", h.ListOrganizations)
 				r.With(leahmw.RequirePermission("settings.update")).Post("/", h.CreateOrganization)
+				r.With(leahmw.RequirePermission("settings.update")).Put("/{id}/manager", h.UpdateOrganizationManager)
 			})
 
 			// Asset Types & Categories

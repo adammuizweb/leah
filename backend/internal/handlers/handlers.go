@@ -143,28 +143,76 @@ func (h *Handler) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	h.svc.DecorateRequestActions(r.Context(), t, userIDFromCtx(r), requestCan(r, "requests.it_review"))
 	respond(w, 200, t)
 }
 
-func (h *Handler) UpdateRequestApproval(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateDepartmentManagerReview(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
 	var body struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
+		Decision string `json:"decision"`
+		Note     string `json:"note"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	ticket, err := h.svc.UpdateRequestApproval(r.Context(), id, body.Status, userIDFromCtx(r), body.Note)
+	ticket, err := h.svc.UpdateDepartmentManagerReview(r.Context(), id, userIDFromCtx(r), body.Decision, body.Note)
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	h.svc.DecorateRequestActions(r.Context(), ticket, userIDFromCtx(r), requestCan(r, "requests.it_review"))
+	respond(w, http.StatusOK, ticket)
+}
+
+func (h *Handler) UpdateITReview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Recommendation string `json:"recommendation"`
+		Note           string `json:"note"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	ticket, err := h.svc.UpdateITReview(r.Context(), id, userIDFromCtx(r), body.Recommendation, body.Note)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	h.svc.DecorateRequestActions(r.Context(), ticket, userIDFromCtx(r), true)
+	respond(w, http.StatusOK, ticket)
+}
+
+func (h *Handler) UpdateITManagerReview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Recommendation string `json:"recommendation"`
+		Note           string `json:"note"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	ticket, err := h.svc.UpdateITManagerReview(r.Context(), id, userIDFromCtx(r), body.Recommendation, body.Note)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	h.svc.DecorateRequestActions(r.Context(), ticket, userIDFromCtx(r), requestCan(r, "requests.it_review"))
 	respond(w, http.StatusOK, ticket)
 }
 
@@ -634,6 +682,23 @@ func (h *Handler) GetTicketHistory(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, history)
 }
 
+func (h *Handler) GetRequestWorkflowHistory(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if _, ok := h.readableTicket(w, r, id); !ok {
+		return
+	}
+	history, err := h.svc.GetRequestWorkflowHistory(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, history)
+}
+
 // ─── SLA Policies ───────────────────────────────────────────────
 
 func (h *Handler) ListSLAPolicies(w http.ResponseWriter, r *http.Request) {
@@ -722,7 +787,8 @@ func sameOptionalID(left, right *int64) bool {
 
 func (h *Handler) readableTicket(w http.ResponseWriter, r *http.Request, ticketID int64) (*models.Ticket, bool) {
 	ticket, err := h.svc.GetTicket(r.Context(), ticketID)
-	if err != nil || (!requestCan(r, "tickets.read") && ticket.CreatedBy != userIDFromCtx(r)) {
+	userID := userIDFromCtx(r)
+	if err != nil || (!requestCan(r, "tickets.read") && ticket.CreatedBy != userID && !h.svc.CanParticipateInRequest(r.Context(), ticketID, userID)) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return nil, false
 	}

@@ -378,6 +378,26 @@ func (h *Handler) CreateHolding(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, hh)
 }
 
+func (h *Handler) UpdateHoldingITOrganization(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		ITOrganizationID *int64 `json:"it_organization_id"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.svc.UpdateHoldingITOrganization(r.Context(), id, body.ITOrganizationID); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	var oo models.Organization
 	if err := decodeJSON(r, &oo); err != nil {
@@ -389,6 +409,26 @@ func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 201, oo)
+}
+
+func (h *Handler) UpdateOrganizationManager(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		ManagerUserID *int64 `json:"manager_user_id"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.svc.UpdateOrganizationManager(r.Context(), id, body.ManagerUserID); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {

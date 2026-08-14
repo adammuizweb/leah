@@ -25,6 +25,19 @@ const validTransitions: Record<string, string[]> = {
   cancelled: [],
 }
 
+const WORKFLOW_STAGE_LABELS: Record<string, string> = {
+  department_manager: 'Manager Divisi',
+  it_review: 'Review Staf IT',
+  it_manager: 'Manager IT',
+}
+
+const WORKFLOW_DECISION_LABELS: Record<string, string> = {
+  approved: 'Disetujui',
+  rejected: 'Ditolak',
+  recommended: 'Direkomendasikan',
+  not_recommended: 'Tidak direkomendasikan',
+}
+
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
@@ -36,13 +49,12 @@ export default function TicketDetail() {
   const [newStatus, setNewStatus] = useState('')
   const [statusNote, setStatusNote] = useState('')
   const [deleteCommentId, setDeleteCommentId] = useState<number | null>(null)
-  const [approvalAction, setApprovalAction] = useState<'approved' | 'rejected' | null>(null)
-  const [approvalNote, setApprovalNote] = useState('')
+  const [workflowAction, setWorkflowAction] = useState<{ stage: 'manager' | 'it' | 'it_manager'; decision: 'approved' | 'rejected' | 'recommended' | 'not_recommended' } | null>(null)
+  const [workflowNote, setWorkflowNote] = useState('')
 
   const isAdmin = user?.is_root || user?.role === 'admin' || user?.role === 'superadmin'
   const canInternal = isAdmin || permissions.includes('tickets.internal')
   const canChangeStatus = isAdmin || permissions.includes('tickets.update')
-  const canApprove = hasPermission('requests.approve')
   const canComment = hasPermission('tickets.comment')
 
   const { data: ticket, isLoading } = useQuery({
@@ -60,6 +72,11 @@ export default function TicketDetail() {
   const { data: history } = useQuery({
     queryKey: ['ticket-history', id],
     queryFn: () => api.tickets.history(Number(id)),
+    enabled: !!id,
+  })
+  const { data: workflowHistory } = useQuery({
+    queryKey: ['ticket-workflow-history', id],
+    queryFn: () => api.tickets.workflowHistory(Number(id)),
     enabled: !!id,
   })
 
@@ -98,15 +115,21 @@ export default function TicketDetail() {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
-  const approvalMutation = useMutation({
-    mutationFn: ({ status, note }: { status: 'approved' | 'rejected'; note: string }) => api.tickets.updateApproval(Number(id), status, note),
-    onSuccess: (_, variables) => {
-      toast(variables.status === 'approved' ? 'Request approved' : 'Request rejected', 'success')
+  const workflowMutation = useMutation({
+    mutationFn: ({ action, note }: { action: NonNullable<typeof workflowAction>; note: string }) => {
+      if (action.stage === 'manager') return api.tickets.departmentManagerReview(Number(id), action.decision as 'approved' | 'rejected', note)
+      if (action.stage === 'it') return api.tickets.itReview(Number(id), action.decision as 'recommended' | 'not_recommended', note)
+      return api.tickets.itManagerReview(Number(id), action.decision as 'recommended' | 'not_recommended', note)
+    },
+    onSuccess: () => {
+      toast('Keputusan berhasil disimpan', 'success')
       queryClient.invalidateQueries({ queryKey: ['ticket', id] })
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
       queryClient.invalidateQueries({ queryKey: ['my-tickets'] })
-      setApprovalAction(null)
-      setApprovalNote('')
+      queryClient.invalidateQueries({ queryKey: ['ticket-workflow-history', id] })
+      queryClient.invalidateQueries({ queryKey: ['ticket-history', id] })
+      setWorkflowAction(null)
+      setWorkflowNote('')
     },
     onError: (error: Error) => toast(error.message, 'error'),
   })
@@ -122,14 +145,26 @@ export default function TicketDetail() {
   )
 
   const allowedTransitions = validTransitions[ticket.status] || []
-  const availableTransitions = ticket.request_kind === 'software' && ticket.approval_status !== 'approved'
+  const availableTransitions = ticket.request_kind !== 'support' && ticket.approval_status !== 'approved'
     ? allowedTransitions.filter(status => status === 'cancelled')
     : allowedTransitions
 
-  function closeApprovalModal() {
-    setApprovalAction(null)
-    setApprovalNote('')
+  function closeWorkflowModal() {
+    setWorkflowAction(null)
+    setWorkflowNote('')
   }
+
+  const workflowNoteRequired = workflowAction?.stage === 'it' || workflowAction?.decision === 'rejected' || workflowAction?.decision === 'not_recommended'
+  const workflowIsPositive = workflowAction?.decision === 'approved' || workflowAction?.decision === 'recommended'
+  const workflowTitle = workflowAction?.stage === 'manager'
+    ? (workflowIsPositive ? 'Setujui Permintaan Divisi' : 'Tolak Permintaan Divisi')
+    : workflowAction?.stage === 'it'
+      ? 'Hasil Review Staf IT'
+      : 'Pengesahan Manager IT'
+  const legacyWorkflow = workflowHistory?.find(item => item.stage === 'legacy_approval')
+  const approvalLabel = ticket.legacy_workflow
+    ? (ticket.approval_status === 'approved' ? 'Disetujui (alur lama)' : 'Ditolak (alur lama)')
+    : APPROVAL_LABELS[ticket.approval_status as ApprovalStatus]
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
@@ -151,14 +186,22 @@ export default function TicketDetail() {
                 <Badge value={ticket.status} icon="dot" />
               </div>
               <p className="text-sm text-gray-500">
-                #{ticket.id} &middot; Created {formatDate(ticket.created_at)}
+                #{ticket.id} &middot; {ticket.created_by_name || 'Pemohon'} &middot; {ticket.organization_name || 'Tanpa organisasi'} &middot; {formatDate(ticket.created_at)}
               </p>
               <p className="text-xs font-medium text-brand-700 mt-1">{REQUEST_KIND_LABELS[ticket.request_kind as RequestKind]}</p>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
-              {canApprove && ticket.request_kind === 'software' && ticket.approval_status === 'pending' && ticket.status === 'new' && <>
-                <button onClick={() => setApprovalAction('rejected')} className="btn-secondary text-red-600">Reject</button>
-                <button onClick={() => setApprovalAction('approved')} className="btn-primary bg-emerald-600 hover:bg-emerald-700">Approve</button>
+              {ticket.can_manager_review && <>
+                <button onClick={() => setWorkflowAction({ stage: 'manager', decision: 'rejected' })} className="btn-secondary text-red-600">Tolak</button>
+                <button onClick={() => setWorkflowAction({ stage: 'manager', decision: 'approved' })} className="btn-primary">Setujui dan Kirim ke IT</button>
+              </>}
+              {ticket.can_it_review && <>
+                <button onClick={() => setWorkflowAction({ stage: 'it', decision: 'not_recommended' })} className="btn-secondary text-red-600">Tidak Direkomendasikan</button>
+                <button onClick={() => setWorkflowAction({ stage: 'it', decision: 'recommended' })} className="btn-primary bg-sky-600 hover:bg-sky-700">Rekomendasikan ke Manager IT</button>
+              </>}
+              {ticket.can_it_manager_review && <>
+                <button onClick={() => setWorkflowAction({ stage: 'it_manager', decision: 'not_recommended' })} className="btn-secondary text-red-600">Tidak Direkomendasikan</button>
+                <button onClick={() => setWorkflowAction({ stage: 'it_manager', decision: 'recommended' })} className="btn-primary bg-emerald-600 hover:bg-emerald-700">Sahkan Rekomendasi IT</button>
               </>}
               {canChangeStatus && availableTransitions.length > 0 && (
                 <button onClick={() => setShowStatusModal(true)} className="btn-primary shrink-0">
@@ -200,16 +243,29 @@ export default function TicketDetail() {
           {ticket.request_kind === 'software' && (
             <div className="card p-6 border-violet-200">
               <div className="flex items-center justify-between gap-3 mb-5">
-                <div><h2 className="text-base font-semibold text-gray-900">Software Proposal</h2><p className="text-xs text-gray-500 mt-0.5">Business request submitted for discovery and approval.</p></div>
-                <span className={`badge ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{APPROVAL_LABELS[ticket.approval_status as ApprovalStatus]}</span>
+                <div><h2 className="text-base font-semibold text-gray-900">Kebutuhan Aplikasi</h2><p className="text-xs text-gray-500 mt-0.5">Pengajuan formal dari divisi pemohon untuk direview bersama IT.</p></div>
+                <span className={`badge ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{approvalLabel}</span>
               </div>
               <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
-                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Software name</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.software_name}</dd></div>
-                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Target users</dt><dd className="mt-1 text-gray-900">{ticket.target_users || 'Not specified'}</dd></div>
-                <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Business objective</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.business_objective}</dd></div>
-                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Desired date</dt><dd className="mt-1 text-gray-700">{ticket.desired_due_date ? new Date(ticket.desired_due_date).toLocaleDateString('id-ID') : 'Flexible'}</dd></div>
-                {ticket.approved_at && <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Decision date</dt><dd className="mt-1 text-gray-700">{formatDate(ticket.approved_at)}</dd></div>}
-                {ticket.approval_note && <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Approval note</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.approval_note}</dd></div>}
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Nama aplikasi</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.software_name}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Pengguna</dt><dd className="mt-1 text-gray-900">{ticket.target_users || 'Belum ditentukan'}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Tujuan dan manfaat</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.business_objective}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Waktu yang diharapkan</dt><dd className="mt-1 text-gray-700">{ticket.desired_due_date ? new Date(ticket.desired_due_date).toLocaleDateString('id-ID') : 'Fleksibel'}</dd></div>
+              </dl>
+            </div>
+          )}
+          {ticket.request_kind === 'technology_review' && (
+            <div className="card p-6 border-sky-200">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div><h2 className="text-base font-semibold text-gray-900">Review Teknologi</h2><p className="text-xs text-gray-500 mt-0.5">IT memberi rekomendasi teknis. Divisi pemohon tetap mengajukan pembelian ke Keuangan.</p></div>
+                <span className={`badge ${approvalClass(ticket.approval_status as ApprovalStatus)}`}>{approvalLabel}</span>
+              </div>
+              <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Barang/aplikasi/vendor</dt><dd className="mt-1 text-gray-900 font-medium">{ticket.technology_name}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Vendor</dt><dd className="mt-1 text-gray-900">{ticket.vendor_name || 'Belum ditentukan'}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Tujuan penggunaan</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.business_objective}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Informasi/spesifikasi</dt><dd className="mt-1 text-gray-700 whitespace-pre-wrap">{ticket.specification}</dd></div>
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Perkiraan harga</dt><dd className="mt-1 text-gray-700">{ticket.estimated_cost != null ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(ticket.estimated_cost) : 'Belum diketahui'}</dd></div>
               </dl>
             </div>
           )}
@@ -285,6 +341,23 @@ export default function TicketDetail() {
 
         {/* Right column: Status History */}
         <div className="space-y-6">
+          {ticket.request_kind !== 'support' && <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-900">Alur Persetujuan</h2>
+            <p className="text-xs text-gray-500 mt-1 mb-4">Setiap keputusan tercatat bersama nama dan waktunya.</p>
+            {ticket.legacy_workflow ? <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold text-gray-800">Keputusan Alur Lama</p><span className={`text-xs font-medium ${ticket.approval_status === 'rejected' ? 'text-red-600' : 'text-emerald-700'}`}>{ticket.approval_status === 'approved' ? 'Disetujui' : 'Ditolak'}</span></div>
+              {legacyWorkflow ? <><p className="text-xs text-gray-600 mt-1">{legacyWorkflow.actor_name} &middot; {formatDate(legacyWorkflow.created_at)}</p>{legacyWorkflow.note && <p className="text-xs text-gray-700 mt-2 whitespace-pre-wrap">{legacyWorkflow.note}</p>}</> : <p className="text-xs text-gray-500 mt-1">Nama pengambil keputusan tidak tersedia pada data lama.</p>}
+              <p className="text-xs text-gray-500 mt-2">Keputusan ini dibuat sebelum alur Manager Divisi &rarr; IT &rarr; Manager IT diberlakukan.</p>
+            </div> : <div className="space-y-3">
+              {(['department_manager', 'it_review', 'it_manager'] as const).map((stage, index) => {
+                const entry = workflowHistory?.find(item => item.stage === stage)
+                return <div key={stage} className={`rounded-lg border p-3 ${entry ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-gray-50'}`}>
+                  <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold text-gray-800">{index + 1}. {WORKFLOW_STAGE_LABELS[stage]}</p><span className={`text-xs font-medium ${entry ? (entry.decision === 'rejected' || entry.decision === 'not_recommended' ? 'text-red-600' : 'text-emerald-700') : 'text-gray-400'}`}>{entry ? WORKFLOW_DECISION_LABELS[entry.decision] : 'Menunggu'}</span></div>
+                  {entry && <><p className="text-xs text-gray-600 mt-1">{entry.actor_name} &middot; {formatDate(entry.created_at)}</p>{entry.note && <p className="text-xs text-gray-700 mt-2 whitespace-pre-wrap">{entry.note}</p>}</>}
+                </div>
+              })}
+            </div>}
+          </div>}
           <div className="card p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Status History</h2>
             {!history?.length ? (
@@ -339,11 +412,11 @@ export default function TicketDetail() {
         </div>
       </Modal>
 
-      <Modal open={approvalAction !== null} onClose={closeApprovalModal} title={approvalAction === 'approved' ? 'Approve Software Request' : 'Reject Software Request'} size="sm">
+      <Modal open={workflowAction !== null} onClose={closeWorkflowModal} title={workflowTitle} size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">{approvalAction === 'approved' ? 'Approve this proposal for triage and delivery planning.' : 'Reject this proposal and provide a clear reason to the requester.'}</p>
-          <div><label className="label">Decision note {approvalAction === 'rejected' ? '' : '(optional)'}</label><textarea value={approvalNote} onChange={event => setApprovalNote(event.target.value)} className="input" rows={3} placeholder="Context for the requester and delivery team" required={approvalAction === 'rejected'} /></div>
-          <div className="flex justify-end gap-3"><button onClick={closeApprovalModal} className="btn-secondary">Cancel</button><button onClick={() => approvalAction && approvalMutation.mutate({ status: approvalAction, note: approvalNote })} disabled={approvalMutation.isPending || (approvalAction === 'rejected' && !approvalNote.trim())} className={approvalAction === 'approved' ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary bg-red-600 hover:bg-red-700'}>{approvalMutation.isPending ? 'Saving...' : approvalAction === 'approved' ? 'Approve Request' : 'Reject Request'}</button></div>
+          <p className="text-sm text-gray-600">{workflowAction?.stage === 'manager' ? 'Keputusan Anda mewakili acknowledgement dari divisi pemohon.' : workflowAction?.stage === 'it' ? 'Tuliskan hasil pemeriksaan, risiko, dan alasan rekomendasi agar dapat dinilai Manager IT.' : 'Pengesahan ini adalah rekomendasi teknis IT, bukan persetujuan pembelian dari Keuangan.'}</p>
+          <div><label className="label">Catatan {workflowNoteRequired ? '' : '(boleh kosong)'}</label><textarea value={workflowNote} onChange={event => setWorkflowNote(event.target.value)} className="input" rows={4} placeholder="Tuliskan alasan atau hal penting yang perlu diketahui." required={workflowNoteRequired} /></div>
+          <div className="flex justify-end gap-3"><button onClick={closeWorkflowModal} className="btn-secondary">Batal</button><button onClick={() => workflowAction && workflowMutation.mutate({ action: workflowAction, note: workflowNote })} disabled={workflowMutation.isPending || (workflowNoteRequired && !workflowNote.trim())} className={workflowIsPositive ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary bg-red-600 hover:bg-red-700'}>{workflowMutation.isPending ? 'Menyimpan...' : workflowIsPositive ? 'Simpan dan Lanjutkan' : 'Simpan Keputusan'}</button></div>
         </div>
       </Modal>
 
